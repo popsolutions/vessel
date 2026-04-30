@@ -133,6 +133,54 @@ def get_boot_device(settings: Settings, slot: int) -> str:
         return ibmc.run("ipmcget -d bootdevice").strip()
 
 
+_SOL_DOWNLOAD_DONE = re.compile(r"Download successfully|sol\.dat.*save|already exists", re.I)
+_SOL_BUSY = re.compile(r"Other user downloading", re.I)
+
+
+def fetch_sol(
+    settings: Settings,
+    slot: int,
+    refresh: bool = True,
+    download_timeout: float = 240.0,
+) -> str:
+    """Capture & dump the iBMC's SOL buffer for a blade.
+
+    The iMana firmware exposes SOL via two non-interactive primitives:
+    1. `ipmcset -d download -v 0` — packages the live SOL ring buffer into
+       `/tmp/sol.dat` on the BMC. Slow (~60-180s) and prints a progress bar.
+    2. `ipmcget -d serialrecord -v list` — dumps `/tmp/sol.dat` to stdout.
+
+    Pass `refresh=False` to skip step 1 and just re-read the previously
+    captured file (cheap; useful for re-rendering without re-downloading).
+    """
+    with IBMCSession(settings, slot) as ibmc:
+        if refresh:
+            out = ibmc.run("ipmcset -d download -v 0", wait=download_timeout)
+            if _SOL_BUSY.search(out):
+                # another download is mid-flight; wait it out and retry once
+                time.sleep(30.0)
+                out = ibmc.run("ipmcset -d download -v 0", wait=download_timeout)
+            if not _SOL_DOWNLOAD_DONE.search(out):
+                raise RuntimeError(
+                    f"SOL download did not complete in {download_timeout}s; "
+                    f"last output tail:\n{out[-400:]}"
+                )
+        dump = ibmc.run("ipmcget -d serialrecord -v list", wait=8.0)
+    return _strip_echo(dump, "ipmcget -d serialrecord -v list")
+
+
+def _strip_echo(out: str, command: str) -> str:
+    """Drop the leading line-echo + trailing prompt that the dispatcher prints."""
+    text = out.replace("\r\n", "\n")
+    if text.startswith(command):
+        text = text[len(command):].lstrip("\n")
+    # trim trailing prompt(s) like "root@BMC:/#"
+    lines = text.splitlines()
+    while lines and re.match(r"^root@\w+:/#\s*$", lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """One Redfish session, parallel GETs of every Chassis member."""
     with RedfishClient(

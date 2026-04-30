@@ -96,6 +96,31 @@
     </div>
   </section>
 
+  <section class="card rounded p-4">
+    <h3 class="font-bold mb-3 text-emerald-400">Console (SOL / KVM)</h3>
+    <div class="flex flex-wrap gap-3 items-center">
+      <label class="text-slate-400">Slot:</label>
+      <input id="console-slot" type="number" min="1" max="32" value="1"
+             class="bg-slate-800 px-2 py-1 rounded w-20">
+      <button class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1 rounded"
+              onclick="solCapture()">
+        Capture SOL
+      </button>
+      <button class="bg-slate-700 px-3 py-1 rounded text-slate-400 cursor-not-allowed"
+              onclick="kvmOpen()" title="not implemented yet">
+        Open KVM (TODO)
+      </button>
+      <span class="text-xs text-slate-500">
+        SOL ≈ 60-180s (BMC packages /tmp/sol.dat then we dump it).
+      </span>
+    </div>
+    <div id="sol-out" class="mt-3">
+      <p class="text-xs text-slate-500">
+        pick a slot and click <em>Capture SOL</em>.
+      </p>
+    </div>
+  </section>
+
   <section>
     <h2 class="text-slate-300 font-bold mb-2 flex items-center justify-between">
       <span>Background tasks</span>
@@ -142,6 +167,42 @@
     const r = await fetch(`/api/blade/${slot}/boot/${dev}`, { method: 'POST' });
     const j = await r.json();
     showOut(JSON.stringify(j, null, 2));
+  }
+
+  function consoleSlot() {
+    return document.getElementById('console-slot').value;
+  }
+  let solPollTimer = null;
+  async function solRefresh(slot) {
+    const r = await fetch(`/api/blade/${slot}/sol/latest`);
+    document.getElementById('sol-out').innerHTML = await r.text();
+    // stop polling once we see "done" or "error" markers in the rendered HTML
+    const html = document.getElementById('sol-out').innerHTML;
+    if (!/capturing\.\.\./.test(html) && solPollTimer) {
+      clearInterval(solPollTimer);
+      solPollTimer = null;
+    }
+  }
+  async function solCapture() {
+    const slot = consoleSlot();
+    const r = await fetch(`/api/blade/${slot}/sol/start`, { method: 'POST' });
+    if (!r.ok) {
+      alert(`SOL start failed: HTTP ${r.status}`);
+      return;
+    }
+    if (solPollTimer) clearInterval(solPollTimer);
+    solRefresh(slot);
+    solPollTimer = setInterval(() => solRefresh(slot), 5000);
+  }
+  async function kvmOpen() {
+    const slot = consoleSlot();
+    const r = await fetch(`/api/blade/${slot}/kvm/start`, { method: 'POST' });
+    if (r.status === 501) {
+      const j = await r.json();
+      alert(`KVM not ready: ${j.detail}`);
+      return;
+    }
+    alert(`HTTP ${r.status}`);
   }
 </script>
 

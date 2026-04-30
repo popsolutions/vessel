@@ -124,6 +124,29 @@ def drift(snapshot_dir: str = typer.Argument(..., help="path to a snapshot dir")
 
 
 @app.command()
+def sol(
+    slot: int = typer.Argument(..., help="blade slot 1..32"),
+    no_refresh: bool = typer.Option(False, "--no-refresh",
+                                    help="re-read previous /tmp/sol.dat without re-capturing"),
+    save: str = typer.Option("", "--save",
+                             help="also write the buffer to this file"),
+) -> None:
+    """Capture and dump the iBMC SOL buffer for a blade.
+
+    Runs `ipmcset -d download -v 0` then `ipmcget -d serialrecord -v list`
+    on the iBMC. The capture step is slow (~60-180s) — be patient.
+    """
+    s = Settings.load()
+    with console.status(f"capturing SOL for slot {slot}... (this can take 1-3 min)"):
+        text = ops.fetch_sol(s, slot, refresh=not no_refresh)
+    console.print(text, highlight=False)
+    if save:
+        from pathlib import Path
+        Path(save).write_text(text)
+        console.print(f"[green]wrote {len(text)} bytes to {save}[/]")
+
+
+@app.command()
 def gui(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),

@@ -139,6 +139,78 @@ def vmedia_mount(
     return JSONResponse({"task_id": task_id})
 
 
+@app.post("/api/blade/{slot}/sol/start")
+def sol_start(slot: int, refresh: bool = True) -> JSONResponse:
+    """Capture the iBMC's SOL buffer in a background task. Slow (~60-180s)."""
+    task_id = f"sol-{slot}-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+    with _tasks_lock:
+        _tasks[task_id] = {
+            "id": task_id, "kind": "sol", "slot": slot, "state": "running",
+        }
+
+    def _run() -> None:
+        try:
+            text = ops.fetch_sol(_settings(), slot, refresh=refresh)
+            with _tasks_lock:
+                _tasks[task_id]["state"] = "done"
+                _tasks[task_id]["sol_text"] = text
+                _tasks[task_id]["result"] = f"{len(text)} bytes captured"
+        except Exception as e:
+            with _tasks_lock:
+                _tasks[task_id]["state"] = "error"
+                _tasks[task_id]["error"] = str(e)
+
+    threading.Thread(target=_run, name=task_id, daemon=True).start()
+    return JSONResponse({"task_id": task_id})
+
+
+@app.get("/api/blade/{slot}/sol/latest", response_class=HTMLResponse)
+def sol_latest(slot: int) -> HTMLResponse:
+    """Return the most recent finished SOL capture for a slot, or a status line."""
+    with _tasks_lock:
+        candidates = [
+            t for t in _tasks.values()
+            if t.get("kind") == "sol" and t.get("slot") == slot
+        ]
+    if not candidates:
+        return HTMLResponse(
+            "<p class='text-xs text-slate-500'>"
+            "no SOL capture yet — click <em>Capture SOL</em>."
+            "</p>"
+        )
+    last = candidates[-1]  # tasks dict is insertion-ordered
+    state = last.get("state")
+    if state == "running":
+        return HTMLResponse(
+            f"<p class='text-xs text-amber-400'>● capturing... task {last['id']}"
+            f" (~60-180s; refreshes automatically)</p>"
+        )
+    if state == "error":
+        return HTMLResponse(
+            f"<p class='text-xs text-rose-400'>✗ {last.get('error', 'error')}</p>"
+        )
+    text = last.get("sol_text", "(empty)")
+    # escape & wrap in <pre>
+    import html as _html
+    return HTMLResponse(
+        f"<div class='text-xs text-slate-400 mb-1'>"
+        f"task {last['id']} — {len(text)} bytes</div>"
+        f"<pre class='text-[11px] leading-tight bg-black/40 p-2 rounded "
+        f"max-h-96 overflow-auto whitespace-pre'>{_html.escape(text)}</pre>"
+    )
+
+
+@app.post("/api/blade/{slot}/kvm/start")
+def kvm_start(slot: int) -> JSONResponse:
+    """Placeholder — KVM video stream RE not finished. See Forgejo issue #15."""
+    raise HTTPException(
+        501,
+        "KVM video stream not implemented yet — protocol RE in progress "
+        "(Forgejo issue #15). vmedia (ISO mount) and SOL are the working "
+        "consoles for now."
+    )
+
+
 @app.post("/api/vmedia/{slot}/release")
 def vmedia_release(slot: int, hard: bool = False) -> JSONResponse:
     from ..vmedia.client import force_release_vmedia
