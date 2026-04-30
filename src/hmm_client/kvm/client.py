@@ -183,15 +183,22 @@ class KvmClient:
         if not self.blade_state.kvm_supported:
             raise RuntimeError(f"blade{slot} reports KVM not supported")
 
-        # The data-plane port is chassis-wide (BLADE_STATE.port is an iBMC
-        # internal hint, not where we connect). Connect to BLADE_PORT_DEFAULT.
+        # Captured pcap shows ~6 SMM heartbeats between BLADE_STATE response
+        # and the per-blade socket opening. The chassis seems to want the
+        # SMM session "warm" before accepting blade-stream connections.
+        for _ in range(3):
+            self._send_smm(OP_HEART_BEAT, bytes([0]))
+            time.sleep(0.5)
+
+        # Data-plane port is chassis-wide (BLADE_STATE.port is an internal hint
+        # in op-20 mode; for op-33 it does carry the right port — but it's
+        # always 2200 in practice). Use the default.
+        port = self.blade_state.blade_port or BLADE_PORT_DEFAULT
         self.blade_sock = socket.create_connection(
-            (self.host, BLADE_PORT_DEFAULT), timeout=15.0)
+            (self.host, port), timeout=15.0)
         self.blade_sock.settimeout(30.0)
 
-        # Per the captured pcap: heartbeat first (carries bladeNO), then
-        # connectBlade, then framerate hint, then connectBlade *again* —
-        # the second `connectBlade` is what actually unblocks the stream.
+        # Per pcap: heartbeat -> connectBlade -> contrRate -> connectBlade
         self._send_blade_heartbeat()
         self._send_connect_blade(slot, color_bit=0, fpeg_alg=False)
         self._send_contr_rate(DEFAULT_FRAMERATE)
@@ -233,21 +240,32 @@ class KvmClient:
 
     def _send_connect_blade(self, blade_no: int, color_bit: int,
                             fpeg_alg: bool) -> None:
-        """Body: [bladeNO, colorBit, fpegAlg]; 4-byte sessionID per pcap."""
+        """Body: [bladeNO, colorBit, fpegAlg]; 4-byte verifyvalue sessionID."""
         assert self.blade_sock is not None
         body = bytes([blade_no & 0xFF, color_bit & 0xFF, 1 if fpeg_alg else 0])
-        sid = self.smm_sessionid[:4]
-        self.blade_sock.sendall(pack_kvm_frame(OP_CONNECT_BLADE, body, sid,
-                                               secure=False))
+        self.blade_sock.sendall(pack_kvm_frame(OP_CONNECT_BLADE, body,
+                                               self._blade_sid(), secure=False))
 
     # ------------------------------------------------------------------
+    def _blade_sid(self) -> bytes:
+        """Per-blade sessionID = `verifyvalue` written little-endian.
+
+        `KVMUtil.intToByte_ret(int)` produces *little-endian* bytes
+        (byte 0 = LSB, byte 3 = MSB); `pack_kvm_frame` then reverses
+        each 4-byte chunk via `perIntToByteCon` to put it big-endian
+        on the wire. Verified against the captured pcap.
+        """
+        if self.session is None:
+            return b"\x00\x00\x00\x00"
+        return self.session.verifyvalue.to_bytes(4, "little")
+
     def _send_contr_rate(self, framerate: int) -> None:
         """contrRate (op 28) — single byte body."""
         if self.blade_sock is None:
             return
         self.blade_sock.sendall(pack_kvm_frame(
             OP_CONTR_RATE, bytes([framerate & 0xFF]),
-            self.smm_sessionid[:4], secure=False))
+            self._blade_sid(), secure=False))
 
     def _send_blade_heartbeat(self) -> None:
         """Per-blade heartbeat. Payload is `[bladeNO]` per captured pcap."""
@@ -255,7 +273,7 @@ class KvmClient:
             return
         body = bytes([self.blade_no & 0xFF])
         self.blade_sock.sendall(pack_kvm_frame(
-            OP_HEART_BEAT, body, self.smm_sessionid[:4], secure=False))
+            OP_HEART_BEAT, body, self._blade_sid(), secure=False))
 
     def _heartbeat_loop(self) -> None:
         """Heartbeat both sockets every ~2s."""
@@ -382,7 +400,7 @@ class KvmClient:
         if self.blade_sock is None:
             return
         self.blade_sock.sendall(pack_kvm_frame(
-            OP_KEY_PACK, body, self.smm_sessionid[:4], secure=False))
+            OP_KEY_PACK, body, self._blade_sid(), secure=False))
 
     def send_mouse(self, dx: int, dy: int, buttons: int) -> None:
         body = bytes([dx & 0xFF, dy & 0xFF, buttons & 0xFF,
@@ -390,7 +408,7 @@ class KvmClient:
         if self.blade_sock is None:
             return
         self.blade_sock.sendall(pack_kvm_frame(
-            OP_MOUSE_PACK, body, self.smm_sessionid[:4], secure=False))
+            OP_MOUSE_PACK, body, self._blade_sid(), secure=False))
 
 
 # ----------------------------------------------------------------------
