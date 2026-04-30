@@ -72,6 +72,47 @@ def index(request: Request) -> HTMLResponse:
     })
 
 
+@app.get("/api/iso/list")
+def iso_list(dir: str = "") -> JSONResponse:
+    """List dirs and .iso/.img files under `dir`.
+
+    Used by the /kvm/{slot} ISO picker. Defaults to `$HMM_ISO_DIR` if
+    set, else the user's home directory. The GUI binds to 127.0.0.1
+    only; same-machine browsing is acceptable here.
+    """
+    base = (dir.strip() or os.environ.get("HMM_ISO_DIR")
+            or str(Path.home()))
+    p = Path(base).expanduser()
+    try:
+        p = p.resolve(strict=True)
+    except (OSError, RuntimeError) as e:
+        raise HTTPException(400, f"cannot resolve {base!r}: {e!s}")
+    if not p.is_dir():
+        raise HTTPException(400, f"{p} is not a directory")
+    dirs: list[dict[str, str]] = []
+    files: list[dict[str, Any]] = []
+    try:
+        for entry in sorted(p.iterdir(), key=lambda e: e.name.lower()):
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_dir():
+                    dirs.append({"name": entry.name, "path": str(entry)})
+                elif entry.is_file() and entry.suffix.lower() in (".iso", ".img"):
+                    files.append({
+                        "name": entry.name,
+                        "path": str(entry),
+                        "size": entry.stat().st_size,
+                    })
+            except OSError:
+                continue
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    parent = str(p.parent) if p.parent != p else None
+    return JSONResponse({"cwd": str(p), "parent": parent,
+                         "dirs": dirs, "files": files})
+
+
 @app.post("/api/host")
 def set_host(request: Request, host: str = Form("")) -> JSONResponse:
     """Persist the active chassis host as a cookie. Empty resets to .env."""

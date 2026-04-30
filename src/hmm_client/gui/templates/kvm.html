@@ -63,6 +63,35 @@
               padding: 6px; border-radius: 4px; font-size: 11px;
               white-space: pre-wrap; max-height: 100px; overflow-y: auto;
               color: #94a3b8; }
+    /* --- ISO picker modal --- */
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7);
+                display: none; align-items: center; justify-content: center;
+                z-index: 100; }
+    .modal-bg.open { display: flex; }
+    .modal { background: #0b1220; border: 1px solid #1f2937; border-radius: 6px;
+             width: min(640px, 92vw); max-height: 80vh;
+             display: flex; flex-direction: column; }
+    .modal header { padding: 12px 14px; border-bottom: 1px solid #1f2937;
+                    display: flex; gap: 10px; align-items: center; }
+    .modal header h4 { margin: 0; color: #10b981; font-size: 13px;
+                       font-weight: bold; }
+    .modal header .cwd { flex: 1; color: #94a3b8; font-size: 11px;
+                         overflow: hidden; text-overflow: ellipsis;
+                         white-space: nowrap; }
+    .modal header button { background: #334155; color: #e2e8f0;
+                           border: none; border-radius: 4px;
+                           padding: 4px 10px; font-size: 12px; cursor: pointer; }
+    .modal .body { padding: 8px 6px; overflow-y: auto; flex: 1; }
+    .modal .row { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer;
+                  border-radius: 4px; font-size: 12px; align-items: center; }
+    .modal .row:hover { background: #1f2937; }
+    .modal .row .ic { width: 16px; color: #64748b; }
+    .modal .row .nm { flex: 1; }
+    .modal .row .sz { color: #64748b; font-size: 11px; }
+    .modal .row.dir .nm { color: #38bdf8; }
+    .modal .row.iso .nm { color: #e2e8f0; }
+    .modal .empty { color: #64748b; padding: 16px; text-align: center;
+                    font-size: 12px; }
   </style>
 </head>
 <body>
@@ -110,9 +139,16 @@
     <h3>Mount ISO</h3>
     <form id="iso-form" onsubmit="mountIso(event)">
       <label class="field">
-        <span class="dim">.iso path</span>
-        <input type="text" name="iso_path" required
-               placeholder="/path/to/file.iso">
+        <span class="dim">.iso file</span>
+        <div style="display:flex; gap:6px;">
+          <input id="iso-path-input" type="text" name="iso_path" required
+                 placeholder="(click Browse →)"
+                 style="flex:1; min-width:0;">
+          <button type="button" class="btn btn-neutr"
+                  onclick="openIsoPicker()" style="flex:0 0 auto;">
+            Browse…
+          </button>
+        </div>
       </label>
       <label class="check">
         <input type="checkbox" name="hard_reset" value="true">
@@ -136,6 +172,17 @@
 </div>
 
 <canvas id="dummy" style="display:none"></canvas>
+
+<div id="iso-modal" class="modal-bg" onclick="if(event.target===this)closeIsoPicker()">
+  <div class="modal" role="dialog" aria-label="Pick ISO file">
+    <header>
+      <h4>pick ISO</h4>
+      <span id="iso-modal-cwd" class="cwd"></span>
+      <button type="button" onclick="closeIsoPicker()">close</button>
+    </header>
+    <div id="iso-modal-body" class="body"></div>
+  </div>
+</div>
 
 <script>
   const slot = {{ slot }};
@@ -217,6 +264,73 @@
     const j = await r.json();
     $iout.textContent = `task ${j.task_id} started — see Background tasks on / `;
   }
+  // --- ISO picker (server-side directory browser) ------------------------
+  function fmtSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+    return (b/1073741824).toFixed(2) + ' GB';
+  }
+  async function loadIsoDir(dir) {
+    const $body = document.getElementById('iso-modal-body');
+    const $cwd  = document.getElementById('iso-modal-cwd');
+    $body.innerHTML = '<div class="empty">loading…</div>';
+    const url = '/api/iso/list' + (dir ? '?dir=' + encodeURIComponent(dir) : '');
+    let j;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) {
+        const err = await r.json();
+        $body.innerHTML = `<div class="empty">${err.detail || r.status}</div>`;
+        return;
+      }
+      j = await r.json();
+    } catch (e) {
+      $body.innerHTML = `<div class="empty">${e}</div>`;
+      return;
+    }
+    $cwd.textContent = j.cwd;
+    let html = '';
+    if (j.parent) {
+      html += `<div class="row dir" onclick="loadIsoDir('${j.parent.replace(/'/g, "\\'")}')">
+                 <span class="ic">↑</span><span class="nm">..</span></div>`;
+    }
+    for (const d of j.dirs) {
+      const p = d.path.replace(/'/g, "\\'");
+      html += `<div class="row dir" onclick="loadIsoDir('${p}')">
+                 <span class="ic">📁</span><span class="nm">${d.name}/</span></div>`;
+    }
+    for (const f of j.files) {
+      const p = f.path.replace(/'/g, "\\'");
+      html += `<div class="row iso" onclick="pickIso('${p}')">
+                 <span class="ic">💿</span>
+                 <span class="nm">${f.name}</span>
+                 <span class="sz">${fmtSize(f.size)}</span></div>`;
+    }
+    if (!j.dirs.length && !j.files.length) {
+      html += '<div class="empty">no .iso/.img files in this directory</div>';
+    }
+    $body.innerHTML = html;
+  }
+  function openIsoPicker() {
+    document.getElementById('iso-modal').classList.add('open');
+    const cur = document.getElementById('iso-path-input').value.trim();
+    // start from the directory of the current value, if any
+    let startDir = '';
+    if (cur) {
+      const i = cur.lastIndexOf('/');
+      if (i > 0) startDir = cur.substring(0, i);
+    }
+    loadIsoDir(startDir);
+  }
+  function closeIsoPicker() {
+    document.getElementById('iso-modal').classList.remove('open');
+  }
+  function pickIso(path) {
+    document.getElementById('iso-path-input').value = path;
+    closeIsoPicker();
+  }
+
   // --- power-state indicator ---------------------------------------------
   async function refreshPwr() {
     const $pwr = document.getElementById('pwr');
