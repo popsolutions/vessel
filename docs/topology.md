@@ -54,24 +54,40 @@ cluster fabric.
 | ?         | 172.31.1.236   | UP - pending fingerprint |
 | ?         | 172.31.1.237   | UP - pending fingerprint |
 
-## Reachability gotcha
+## Reaching iBMCs - SSH jump (works)
 
-The HMM's `sshd` has **`AllowTcpForwarding no`** - direct local-port-forwarding
-through the HMM (`ssh -L`) returns *Administratively prohibited*. So we
-**cannot tunnel HTTPS to an iBMC via the HMM**. This blocks the original
-plan in issue [#7](https://git.pop.coop/noc/huaweie9000/issues/7).
+The HMM's `sshd` has `AllowTcpForwarding no`, so `ssh -L` direct tunneling
+returns *Administratively prohibited*. **But** the HMM's restricted
+dispatcher exposes its own `ssh` command, and the iBMCs accept the same
+`root` password as the HMM. So the working pattern is:
 
-Fallback paths to reach iBMC Redfish from the workstation, in order of
-preference:
+```
+ssh root@192.168.1.30                 # workstation -> HMM
+> ssh 172.31.1.129 NoStricHostKeyChecking
+> <Huawei12#$ password>
+root@BMC:/#                           # we are now inside the iBMC
+```
 
-1. **Reconfigure each iBMC** to obtain an address on the external mgmt VLAN
-   (`192.168.1.0/24`) so the workstation reaches it directly. Typically done
-   via the HMM web UI's "Blade IP" page - needs to be scripted via the
-   undocumented HTML endpoints.
-2. **Add a static route** on the workstation through one of the CX310
-   uplinks once VLAN ops are in place (Phase 3).
-3. **Scrape the HMM web UI** for proxy endpoints (Huawei's older firmware
-   has `/cgi-bin/...` proxies that forward to the iBMC).
+Inside the iBMC: a different restricted dispatcher with `ipmcget` and
+`ipmcset` (see `docs/cli-vocabulary.md` once expanded). Vocabulary on this
+firmware (iMana v6.05, Jan-2015 build):
 
-This finding is also recorded as a comment on issue #7 and folded into
-Phase-2 planning.
+```
+TMOUT  df  dmesg  exit  free  ifconfig  ipmcget  ipmcset
+maintenance_debug  netstat  ping  ps  route  top
+```
+
+`ipmcset -d bootdevice -v PXE` and `ipmcset -d powerstate -v reset` (etc.)
+let us drive boot/power. **No virtual-media command** on this firmware -
+Phase 2 must use PXE rather than Redfish `VirtualMedia`.
+
+## What's NOT reachable directly
+
+- iBMC Redfish HTTP from the workstation - blocked by HMM's
+  `AllowTcpForwarding no`. Workaround: paramiko `direct-tcpip` is also
+  prohibited, so we have to either (a) put the iBMC on the external mgmt
+  VLAN via `ipmcset -t eth0 ...`, or (b) drive iBMC entirely from inside
+  the SSH jump shell.
+- The chassis Redfish at the SMM does **not** proxy to iBMCs:
+  `/redfish/v1/Systems/Blade1` returns 403; `/Chassis/Blade1/Power` 403.
+  Per-blade compute info is iBMC-only.
