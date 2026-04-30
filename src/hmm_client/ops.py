@@ -96,18 +96,28 @@ class IBMCSession:
 
 
 def power(settings: Settings, slot: int, action: str) -> str:
-    """Apply a power action to a blade. Returns the iBMC response text."""
+    """Apply a power action to a blade. Returns the iBMC response text.
+
+    `frucontrol` (reset/cycle/nmi) prompts the iBMC's interactive
+    "Do you want to continue?[Y/N]:" — we auto-answer Y here.
+    """
     if action in POWER_VALUES:
         cmd = f"ipmcset -d powerstate -v {POWER_VALUES[action]}"
+        needs_confirm = False
     elif action in RESET_VALUES:
         cmd = f"ipmcset -d frucontrol -v {RESET_VALUES[action]}"
+        needs_confirm = True
     else:
         raise ValueError(
             f"unknown power action: {action!r} "
             f"(want one of {list(POWER_VALUES) + list(RESET_VALUES)})"
         )
     with IBMCSession(settings, slot) as ibmc:
-        return ibmc.run(cmd)
+        out1 = ibmc.run(cmd)
+        if needs_confirm and "Y/N" in out1:
+            out2 = ibmc.run("Y", wait=2.5)
+            return out1 + "\n" + out2
+        return out1
 
 
 def set_boot_device(settings: Settings, slot: int, device: str) -> str:
