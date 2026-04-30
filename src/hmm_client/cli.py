@@ -31,8 +31,8 @@ def list_cmd(
 ) -> None:
     """List populated blades and switches."""
     s = Settings.load()
-    blades = ops.list_blades(s)
-    sw = ops.list_switches(s)
+    with console.status("querying chassis Redfish..."):
+        blades, sw = ops.list_inventory(s)
 
     t = Table(title="Blades")
     t.add_column("Slot", justify="right")
@@ -121,6 +121,34 @@ def drift(snapshot_dir: str = typer.Argument(..., help="path to a snapshot dir")
     """Compare a snapshot to live state (read-only)."""
     from pathlib import Path
     raise typer.Exit(detect_drift(Path(snapshot_dir)))
+
+
+sessions_app = typer.Typer(help="Manage Redfish sessions on the HMM")
+app.add_typer(sessions_app, name="sessions")
+
+
+@sessions_app.command("list")
+def sessions_list() -> None:
+    """List all active Redfish sessions on the HMM."""
+    s = Settings.load()
+    with console.status("querying sessions..."):
+        items = ops.list_sessions(s)
+    t = Table(title=f"Redfish sessions ({len(items)})")
+    t.add_column("ID"); t.add_column("User"); t.add_column("URL"); t.add_column("Mine?")
+    for it in items:
+        t.add_row(str(it["id"]), str(it["user"]), it["url"], "yes" if it["is_mine"] else "")
+    console.print(t)
+
+
+@sessions_app.command("clean")
+def sessions_clean(yes: bool = typer.Option(False, "--yes", "-y")) -> None:
+    """Delete every active Redfish session on the HMM (orphans cleanup)."""
+    s = Settings.load()
+    if not yes and not typer.confirm("delete all sessions except a fresh one?", default=True):
+        raise typer.Exit(1)
+    with console.status("cleaning..."):
+        n = ops.cleanup_sessions(s)
+    console.print(f"[green]deleted {n} orphan session(s)[/]")
 
 
 if __name__ == "__main__":

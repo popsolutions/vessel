@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+import httpx
 import paramiko
 
 from .config import Settings
@@ -122,48 +124,88 @@ def get_boot_device(settings: Settings, slot: int) -> str:
         return ibmc.run("ipmcget -d bootdevice").strip()
 
 
-def list_blades(settings: Settings) -> list[dict[str, Any]]:
-    """Inventory of present blades from the chassis Redfish."""
-    blades: list[dict[str, Any]] = []
+def _inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """One Redfish session, parallel GETs of every Chassis member."""
     with RedfishClient(
         settings.hmm_host, settings.hmm_user, settings.hmm_password,
         verify=settings.verify_tls,
     ) as rf:
         coll = rf.get("/redfish/v1/Chassis")
-        for ref in rf.members(coll):
-            doc = rf.get(ref)
-            m = re.match(r"Blade(\d+)$", doc.get("Id", ""))
-            if not m:
-                continue
+        refs = rf.members(coll)
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            docs = list(ex.map(rf.get, refs))
+
+    blades: list[dict[str, Any]] = []
+    switches: list[dict[str, Any]] = []
+    for doc in docs:
+        id_ = doc.get("Id", "")
+        state = (doc.get("Status") or {}).get("State", "?")
+        if (m := re.match(r"Blade(\d+)$", id_)):
             slot = int(m.group(1))
-            state = (doc.get("Status") or {}).get("State", "?")
             blades.append({
-                "slot": slot,
-                "model": doc.get("Model", "-"),
-                "state": state,
-                "ibmc_ip": ibmc_ip_for_slot(slot),
+                "slot": slot, "model": doc.get("Model", "-"),
+                "state": state, "ibmc_ip": ibmc_ip_for_slot(slot),
             })
-    return sorted(blades, key=lambda b: b["slot"])
+        elif (m := re.match(r"Swi(\d+)$", id_)):
+            slot = int(m.group(1))
+            switches.append({
+                "slot": slot, "model": doc.get("Model", "-"),
+                "state": state, "mgmt_ip": f"172.31.1.{160 + slot}",
+            })
+    return (sorted(blades, key=lambda b: b["slot"]),
+            sorted(switches, key=lambda s: s["slot"]))
+
+
+def list_blades(settings: Settings) -> list[dict[str, Any]]:
+    return _inventory(settings)[0]
 
 
 def list_switches(settings: Settings) -> list[dict[str, Any]]:
-    switches: list[dict[str, Any]] = []
+    return _inventory(settings)[1]
+
+
+def list_inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Both blades and switches in a single Redfish session (preferred for the CLI)."""
+    return _inventory(settings)
+
+
+def list_sessions(settings: Settings) -> list[dict[str, Any]]:
+    """List all active Redfish sessions on the HMM."""
     with RedfishClient(
         settings.hmm_host, settings.hmm_user, settings.hmm_password,
         verify=settings.verify_tls,
     ) as rf:
-        coll = rf.get("/redfish/v1/Chassis")
+        coll = rf.get("/redfish/v1/SessionService/Sessions")
+        my_url = rf._session_url  # noqa: SLF001
+        out: list[dict[str, Any]] = []
         for ref in rf.members(coll):
-            doc = rf.get(ref)
-            m = re.match(r"Swi(\d+)$", doc.get("Id", ""))
-            if not m:
-                continue
-            slot = int(m.group(1))
-            state = (doc.get("Status") or {}).get("State", "?")
-            switches.append({
-                "slot": slot,
-                "model": doc.get("Model", "-"),
-                "state": state,
-                "mgmt_ip": f"172.31.1.{160 + slot}",
+            d = rf.get(ref)
+            out.append({
+                "url": ref,
+                "id": d.get("Id"),
+                "user": d.get("UserName"),
+                "is_mine": ref == my_url,
             })
-    return sorted(switches, key=lambda s: s["slot"])
+    return out
+
+
+def cleanup_sessions(settings: Settings) -> int:
+    """Delete every Redfish session on the HMM except the one we just opened.
+    Returns the number of orphan sessions removed.
+    """
+    deleted = 0
+    with RedfishClient(
+        settings.hmm_host, settings.hmm_user, settings.hmm_password,
+        verify=settings.verify_tls,
+    ) as rf:
+        coll = rf.get("/redfish/v1/SessionService/Sessions")
+        my_url = rf._session_url  # noqa: SLF001
+        for ref in rf.members(coll):
+            if ref == my_url:
+                continue
+            try:
+                rf._client.delete(ref)  # noqa: SLF001
+                deleted += 1
+            except httpx.HTTPError:
+                pass
+    return deleted
