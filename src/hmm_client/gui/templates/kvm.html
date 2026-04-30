@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>hmm KVM — slot {{ slot }} @ {{ host }}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #000; color: #e2e8f0;
+           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin:0; }
+    #frame { display: block; margin: 0 auto; image-rendering: pixelated;
+             max-width: 100vw; max-height: calc(100vh - 48px); }
+    #status { background: #0b1220; border-bottom: 1px solid #1f2937;
+              padding: 8px 16px; display: flex; gap: 16px; align-items: center;
+              font-size: 12px; }
+    #status .ok { color: #10b981; }
+    #status .err { color: #f43f5e; }
+    #status .dim { color: #64748b; }
+  </style>
+</head>
+<body>
+
+<div id="status">
+  <a href="/" class="text-emerald-400">← back</a>
+  <span class="dim">slot</span> <span>{{ slot }}</span>
+  <span class="dim">host</span> <span>{{ host }}</span>
+  <span class="dim">conn</span> <span id="conn">connecting…</span>
+  <span class="dim">frame</span> <span id="frame-id">-</span>
+  <span class="dim">size</span> <span id="frame-size">-</span>
+  <span class="dim">fps</span> <span id="fps">-</span>
+  <span class="dim flex-1 text-right" id="msg"></span>
+</div>
+
+<canvas id="frame" width="800" height="600"></canvas>
+
+<script>
+  const slot = {{ slot }};
+  const canvas = document.getElementById('frame');
+  const ctx = canvas.getContext('2d');
+  const $conn = document.getElementById('conn');
+  const $msg  = document.getElementById('msg');
+  const $fid  = document.getElementById('frame-id');
+  const $fsz  = document.getElementById('frame-size');
+  const $fps  = document.getElementById('fps');
+
+  let pendingMeta = null;
+  let frameWindow = [];
+
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://')
+                + location.host + `/api/blade/${slot}/kvm/ws`;
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    $conn.textContent = 'open';
+    $conn.className = 'ok';
+  };
+  ws.onclose = () => {
+    $conn.textContent = 'closed';
+    $conn.className = 'err';
+  };
+  ws.onerror = () => {
+    $conn.textContent = 'error';
+    $conn.className = 'err';
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'frame') {
+        pendingMeta = m;
+      } else if (m.type === 'error') {
+        $msg.textContent = m.message;
+        $msg.className = 'flex-1 text-right err';
+      } else if (m.type === 'info') {
+        $msg.textContent = m.message;
+        $msg.className = 'flex-1 text-right dim';
+      }
+      return;
+    }
+    const blob = new Blob([ev.data], {type: 'image/png'});
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      if (canvas.width !== img.naturalWidth)  canvas.width  = img.naturalWidth;
+      if (canvas.height !== img.naturalHeight) canvas.height = img.naturalHeight;
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      if (pendingMeta) {
+        $fid.textContent = '0x' + pendingMeta.img_id.toString(16);
+        $fsz.textContent = pendingMeta.size + ' B';
+      }
+      const now = performance.now();
+      frameWindow.push(now);
+      frameWindow = frameWindow.filter(t => now - t < 5000);
+      $fps.textContent = (frameWindow.length / 5).toFixed(1);
+    };
+    img.src = url;
+  };
+</script>
+
+</body>
+</html>

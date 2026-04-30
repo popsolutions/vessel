@@ -106,9 +106,9 @@
               onclick="solCapture()">
         Capture SOL
       </button>
-      <button class="bg-slate-700 px-3 py-1 rounded text-slate-400 cursor-not-allowed"
-              onclick="kvmOpen()" title="not implemented yet">
-        Open KVM (TODO)
+      <button class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded"
+              onclick="kvmOpen()" title="opens the canvas; live handshake is K3.5 — current page replays a captured POST screen">
+        Open KVM
       </button>
       <span class="text-xs text-slate-500">
         SOL ≈ 60-180s (BMC packages /tmp/sol.dat then we dump it).
@@ -197,12 +197,12 @@
   async function kvmOpen() {
     const slot = consoleSlot();
     const r = await fetch(`/api/blade/${slot}/kvm/start`, { method: 'POST' });
-    if (r.status === 501) {
-      const j = await r.json();
-      alert(`KVM not ready: ${j.detail}`);
+    if (!r.ok) {
+      alert(`KVM start failed: HTTP ${r.status}`);
       return;
     }
-    alert(`HTTP ${r.status}`);
+    const j = await r.json();
+    if (j.url) window.open(j.url, `kvm-slot-${slot}`);
   }
 </script>
 

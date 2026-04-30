@@ -8,13 +8,15 @@ Run via `hmm gui` (CLI subcommand) or:
 """
 from __future__ import annotations
 
+import asyncio
+import os
 import threading
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -202,13 +204,70 @@ def sol_latest(slot: int) -> HTMLResponse:
 
 @app.post("/api/blade/{slot}/kvm/start")
 def kvm_start(slot: int) -> JSONResponse:
-    """Placeholder — KVM video stream RE not finished. See Forgejo issue #15."""
-    raise HTTPException(
-        501,
-        "KVM video stream not implemented yet — protocol RE in progress "
-        "(Forgejo issue #15). vmedia (ISO mount) and SOL are the working "
-        "consoles for now."
-    )
+    """Hand the UI the URL of the live canvas page.
+
+    The real handshake (K3.5) will land at /api/blade/{slot}/kvm/ws.
+    Today the WS endpoint streams a captured replay so the canvas
+    pipeline can be exercised end-to-end.
+    """
+    return JSONResponse({"ok": True, "url": f"/kvm/{slot}"})
+
+
+@app.get("/kvm/{slot}", response_class=HTMLResponse)
+def kvm_canvas(request: Request, slot: int) -> HTMLResponse:
+    """Full-screen KVM canvas — connects to /api/blade/{slot}/kvm/ws."""
+    return templates.TemplateResponse(request, "kvm.html", {
+        "slot": slot, "host": _settings().hmm_host,
+    })
+
+
+@app.websocket("/api/blade/{slot}/kvm/ws")
+async def kvm_ws(ws: WebSocket, slot: int) -> None:
+    """Stream decoded KVM frames as PNG bytes.
+
+    K3 mode: replays bytes from `HMM_KVM_REPLAY_CAPTURE` env var (path
+    to a `.bin` server→client dump). When unset, falls back to
+    `./captures/stream_4_s2c.bin` if present.
+
+    K3.5 will swap the source for a live `KvmClient.frames()` generator
+    without changing the wire format on this socket.
+    """
+    await ws.accept()
+    cap_env = os.environ.get("HMM_KVM_REPLAY_CAPTURE", "").strip()
+    if not cap_env:
+        default = Path("captures") / "stream_4_s2c.bin"
+        if default.exists():
+            cap_env = str(default)
+    if not cap_env or not Path(cap_env).exists():
+        await ws.send_json({
+            "type": "error",
+            "message": ("no replay capture configured; set "
+                        "HMM_KVM_REPLAY_CAPTURE=/path/to/stream.bin or "
+                        "drop a .bin into ./captures/. Live mode = K3.5."),
+        })
+        await ws.close()
+        return
+
+    from ..kvm.replay import replay_capture_to_pngs
+
+    frame_delay = float(os.environ.get("HMM_KVM_REPLAY_FPS_DELAY", "0.5"))
+    try:
+        await ws.send_json({"type": "info",
+                            "message": f"replay slot={slot} src={cap_env}"})
+        while True:  # loop the capture forever so the page stays animated
+            frames_sent = 0
+            for img_id, png in replay_capture_to_pngs(cap_env):
+                await ws.send_json({"type": "frame", "img_id": img_id,
+                                    "size": len(png)})
+                await ws.send_bytes(png)
+                frames_sent += 1
+                await asyncio.sleep(frame_delay)
+            await ws.send_json({"type": "info",
+                                "message": f"replay loop done "
+                                           f"({frames_sent} frames); restarting"})
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        return
 
 
 @app.post("/api/vmedia/{slot}/release")
