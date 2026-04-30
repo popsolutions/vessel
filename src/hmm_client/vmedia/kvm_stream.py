@@ -222,9 +222,60 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 # --- High-level builders matching specific PackData methods ------------------
 
 def pack_req_vmm_codekey(blade_no: int, sessionid: bytes, secure: bool = False) -> bytes:
-    """REQ_VMM_CODEKEY (op 49). Payload: 1 byte = bladeNO."""
+    """REQ_VMM_CODEKEY (op 49). Payload: 1 byte = bladeNO.
+
+    Sent on the per-blade KVM stream port (e.g., 2200 for Blade 1, returned
+    in the BLADE_STATE response). The 4-byte sessionID is the per-blade
+    `imagePaneCodeKey` int (byte-swapped via perIntToByteCon).
+    """
     return pack_kvm_frame(KVM_OP_REQ_VMM_CODEKEY, bytes([blade_no & 0xFF]),
                           sessionid=sessionid, secure=secure)
+
+
+def parse_vmm_codekey_report(payload: bytes) -> tuple[bytes, bytes]:
+    """Decode VMM_CODEENCRYPT_REPORT (op 50) payload.
+
+    Layout (per the captured Palemoon session):
+        [1 B status/flag = 00] [20 B negoCodeKey ASCII hex] [16 B negoSalt]
+
+    Returns (negoCodeKey: 20-byte ASCII string, negoSalt: 16-byte bytes).
+    """
+    if len(payload) < 37:
+        raise ValueError(f"VMM_CODEENCRYPT_REPORT payload must be ≥37 B, got {len(payload)}")
+    # payload[0] = status flag (00 = ok per observed traffic)
+    nego_codekey = payload[1:21]   # 20 bytes (ASCII chars)
+    nego_salt = payload[21:37]      # 16 bytes (binary)
+    return nego_codekey, nego_salt
+
+
+def derive_vmedia_session_keys(nego_codekey: bytes, nego_salt: bytes,
+                               iterations: int = 5000) -> dict[str, bytes]:
+    """PBKDF2-HMAC-SHA1 derivation per VMConsole.createSecretCertifyCode (bCodeKeyNego=true).
+
+        password = nego_codekey (20 ASCII bytes -> char[] -> UTF-8 bytes)
+        salt     = nego_salt (16 bytes)
+        iter     = 5000 (initial; rotated by setSuitePack)
+        length   = 56 bytes
+        ↓
+        sessionid = out[:24]   ← CERTIFY_ID body field on port 8501 (after byte-swap)
+        secretKey = out[24:40]
+        secretIV  = out[40:56]
+    """
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    if len(nego_codekey) != 20:
+        raise ValueError(f"nego_codekey must be 20 bytes, got {len(nego_codekey)}")
+    if len(nego_salt) != 16:
+        raise ValueError(f"nego_salt must be 16 bytes, got {len(nego_salt)}")
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=56, salt=nego_salt,
+                     iterations=iterations)
+    out = kdf.derive(bytes(nego_codekey))
+    return {
+        "sessionid": out[:24],
+        "secret_key": out[24:40],
+        "secret_iv": out[40:56],
+    }
 
 
 def pack_req_blade_present(sessionid: bytes, secure: bool = False) -> bytes:
