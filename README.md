@@ -38,6 +38,40 @@ Java applet (Palemoon-on-Windows). Goal: backup-then-change workflow for
 
 See [`docs/discovery.md`](docs/discovery.md) for raw evidence and vocabulary.
 
+## Status (2026-04-30)
+
+### What works today
+
+The `hmm` CLI replaces the legacy applet for chassis ops:
+
+```bash
+hmm list                         # populated blades + switches (12s)
+hmm power <slot> on|off|reset|cycle|nmi
+hmm boot  <slot> none|pxe|hdd|cd|floppy [--reboot]
+hmm bootdev <slot>
+hmm sessions list|clean          # manage Redfish session slots
+hmm discover                     # full Redfish walk
+hmm snapshot                     # backup HMM + switches (140 KB)
+hmm drift <snapshot-dir>         # compare snapshot vs live
+```
+
+Tested live against the production HMM. Power/boot reach the iBMC via the
+HMM SSH dispatcher (no virtual media needed for those ops).
+
+### What's still in progress
+
+| Capability | State | Tracking |
+|---|---|---|
+| VirtualMedia mount (boot ISO) | foundation done; protocol RE in progress | [#20](https://git.pop.coop/noc/huaweie9000/issues/20) |
+| KVM console (video + input) | applet decompiled; protocol partly mapped | [#15](https://git.pop.coop/noc/huaweie9000/issues/15), [#16](https://git.pop.coop/noc/huaweie9000/issues/16) |
+| FastAPI GUI | not started | [#14](https://git.pop.coop/noc/huaweie9000/issues/14) |
+| Switch VRP CLI | not started | [#11](https://git.pop.coop/noc/huaweie9000/issues/11) |
+
+The protocol is genuinely deep — the iBMC has aggressive auth-failure
+lockouts (~30-120s) and the KVM stream uses a custom `[FE F6 lenH lenL]`
+framing with CRC16-LE bodies that may need AES-CBC encryption when
+`securekvm=1`. Each unknown takes empirical iteration.
+
 ## Quick start
 
 ```bash
@@ -46,40 +80,42 @@ uv pip install -e .
 
 cp .env.example .env  # then edit with real credentials
 
-# read-only Redfish discovery → writes ./discovery/<UTC-stamp>/
-python -m hmm_client.discover
+hmm list              # confirm CLI works against your chassis
 ```
 
 ## Roadmap
 
 Tracked as Forgejo milestones + issues. Detail in
-[`docs/roadmap.md`](docs/roadmap.md). Four phases, in order:
+[`docs/roadmap.md`](docs/roadmap.md). Four phases:
 
-1. **Discovery & Backup** — non-destructive. Snapshot HMM + each switch + each
-   iBMC config. Restore command. Gate: full round-trip backup → restore
-   verified on a staging blade.
-2. **Proxmox commissioning** — Redfish `VirtualMedia` on each blade's iBMC
-   (not the SMM Redfish, which lacks Systems/VirtualMedia). HTTP-served ISO,
-   boot-once, answer file.
-3. **Switch ops & VLAN** — SSH wrapper for CX310 (Huawei VRP CLI). Pattern:
-   *snapshot → apply → validate (ping/LLDP) → auto-rollback if mgmt drops*.
-4. **GUI** — FastAPI + HTMX local web app. Chassis map, power/mount/console
-   buttons. KVM strategy decided after applet protocol analysis (likely
-   embedded noVNC, with SOL fallback).
+1. **Discovery & Backup** ✅ shipped (`hmm snapshot`, `hmm drift`)
+2. **Proxmox commissioning** 🟡 in progress — `hmm vmedia mount` on issue [#20](https://git.pop.coop/noc/huaweie9000/issues/20)
+3. **Switch ops & VLAN** ⏭️ blocked on direct CX310 access (issue [#11](https://git.pop.coop/noc/huaweie9000/issues/11))
+4. **GUI** ⏭️ depends on Phase 2/3
 
 ## Layout
 
 ```
 src/hmm_client/
-  __init__.py
-  config.py        # Settings, env loader
-  redfish.py       # DMTF Redfish 1.0.2 client (session auth)
-  discover.py      # read-only inventory walker
+  config.py          # Settings, env loader
+  redfish.py         # DMTF Redfish 1.0.2 client
+  ops.py             # power/boot/inventory via SSH-jump + Redfish
+  cli.py             # Typer CLI (hmm <subcommand>)
+  discover.py        # read-only Redfish walker
+  snapshot.py        # backup HMM + switches
+  restore.py         # drift detection (read-only)
+  vmedia/            # VirtualMedia client (in progress)
+    proto.py         # 12-byte VM frame primitives
+    crypto.py        # AES-128-CBC + key parsers
+    login.py         # HMM Web auth + per-session embed extraction
+    client.py        # VM data-plane TCP
+    kvm_stream.py    # port-2198 KVM framer (FE F6 + CRC16)
 docs/
-  discovery.md     # findings, vocabulary, gaps
-  roadmap.md       # phases + issue links
-discovery/         # gitignored: raw API dumps
-snapshots/         # gitignored: backup payloads
+  discovery.md       cli-vocabulary.md   topology.md
+  roadmap.md         kvm-protocol-re.md
+re/                  # gitignored: vconsole.jar + decompiled (Huawei IP)
+discovery/           # gitignored: raw API dumps
+snapshots/           # gitignored: backup payloads
 ```
 
 ## Safety stance
