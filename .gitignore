@@ -1,0 +1,23 @@
+.env
+.env.local
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+.idea/
+.vscode/
+
+# Snapshot raw payloads (may contain secrets / configs); keep tree, drop content
+snapshots/*/raw/
+!snapshots/.gitkeep
+
+# Discovery artifacts (raw API dumps; may contain UUIDs/MACs/serials)
+discovery/*/
+!discovery/.gitkeep
