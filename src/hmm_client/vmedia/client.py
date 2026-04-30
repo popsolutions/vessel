@@ -36,7 +36,7 @@ from .proto import (
     parse_header,
 )
 
-DEFAULT_VERSION = (2, 1, 0, 0)
+DEFAULT_VERSION = (3, 1, 1, 1)  # matches Palemoon's captured CERTIFY_ID byte-for-byte
 CONNECT_TIMEOUT = 20.0
 RECV_TIMEOUT = 10.0
 
