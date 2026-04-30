@@ -85,19 +85,19 @@ This file mirrors the plan; the live state lives in the issue tracker.
 
 | # | Title | Phase | Status |
 |---|---|---|---|
-| TBD | Map HMM `smmget`/`smmset` data-item dictionary | 1 | open |
-| TBD | Determine `swiconfexport` output destination | 1 | open |
-| TBD | Discover per-blade iBMC IPs in 172.31.0.0/24 | 1 | open |
-| TBD | Implement `hmm-snapshot` CLI | 1 | open |
-| TBD | Implement `hmm-restore` CLI | 1 | open |
-| TBD | Round-trip backup → restore on staging blade | 1 | open |
-| TBD | Reach iBMC Redfish via SSH tunnel through HMM | 2 | open |
-| TBD | Confirm iBMC `VirtualMedia` actions | 2 | open |
-| TBD | Implement `hmm-provision` (Redfish virtual media + boot once) | 2 | open |
-| TBD | Proxmox unattended-install answer file | 2 | open |
-| TBD | CX310 mgmt SSH access + VRP CLI wrapper | 3 | open |
-| TBD | VLAN CRUD with snapshot + watchdog rollback | 3 | open |
-| TBD | Network diagnostics (ping/ARP/MAC/LLDP) | 3 | open |
-| TBD | FastAPI GUI scaffolding + chassis map | 4 | open |
-| TBD | Capture & decode legacy Java KVM applet handshake | 4 | open |
-| TBD | Console: noVNC or SOL fallback | 4 | open |
+| [#1](https://git.pop.coop/noc/huaweie9000/issues/1) | Map HMM `smmget`/`smmset` data-item dictionary | 1 | open |
+| [#2](https://git.pop.coop/noc/huaweie9000/issues/2) | Determine `swiconfexport` output destination | 1 | open |
+| [#3](https://git.pop.coop/noc/huaweie9000/issues/3) | Discover per-blade iBMC IPs in 172.31.0.0/24 | 1 | open |
+| [#4](https://git.pop.coop/noc/huaweie9000/issues/4) | Implement `hmm-snapshot` CLI | 1 | open |
+| [#5](https://git.pop.coop/noc/huaweie9000/issues/5) | Implement `hmm-restore <snapshot>` CLI | 1 | open |
+| [#6](https://git.pop.coop/noc/huaweie9000/issues/6) | Round-trip backup → wipe → restore on staging blade | 1 | open |
+| [#7](https://git.pop.coop/noc/huaweie9000/issues/7) | Reach iBMC Redfish via SSH tunnel through HMM | 2 | open |
+| [#8](https://git.pop.coop/noc/huaweie9000/issues/8) | Confirm iBMC `VirtualMedia` actions | 2 | open |
+| [#9](https://git.pop.coop/noc/huaweie9000/issues/9) | Implement `hmm-provision <blade> --iso <url>` | 2 | open |
+| [#10](https://git.pop.coop/noc/huaweie9000/issues/10) | Proxmox unattended-install answer file | 2 | open |
+| [#11](https://git.pop.coop/noc/huaweie9000/issues/11) | CX310 mgmt SSH access + VRP CLI wrapper | 3 | open |
+| [#12](https://git.pop.coop/noc/huaweie9000/issues/12) | VLAN CRUD with snapshot + watchdog rollback | 3 | open |
+| [#13](https://git.pop.coop/noc/huaweie9000/issues/13) | Network diagnostics (ping/ARP/MAC/LLDP) | 3 | open |
+| [#14](https://git.pop.coop/noc/huaweie9000/issues/14) | FastAPI GUI scaffolding + chassis map | 4 | open |
+| [#15](https://git.pop.coop/noc/huaweie9000/issues/15) | Capture & decode legacy Java KVM applet handshake | 4 | open |
+| [#16](https://git.pop.coop/noc/huaweie9000/issues/16) | Console: noVNC fallback to SOL | 4 | open |
