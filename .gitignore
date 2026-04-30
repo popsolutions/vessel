@@ -14,10 +14,12 @@ build/
 .idea/
 .vscode/
 
-# Snapshot raw payloads (may contain secrets / configs); keep tree, drop content
-snapshots/*/raw/
+# Snapshot payloads (configs, hashes, redfish dumps — may contain MACs/UUIDs);
+# keep the tree, drop the content
+snapshots/*/
 !snapshots/.gitkeep
 
-# Discovery artifacts (raw API dumps; may contain UUIDs/MACs/serials)
+# Discovery artifacts (raw API dumps and sweep results; may contain UUIDs/MACs)
 discovery/*/
+discovery/*.json
 !discovery/.gitkeep
