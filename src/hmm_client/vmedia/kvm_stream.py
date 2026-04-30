@@ -104,11 +104,17 @@ def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
                    secure: bool = False) -> bytes:
     """Build a KVM frame for the wire.
 
-    The length field counts (CRC + op + payload) bytes, i.e. all bytes after
-    sessionID. CRC is encoded per `_huawei_crc_field` (sign-only quirk).
+    Java's PackData runs `KVMUtil.perIntToByteCon` on the sessionID before
+    writing it into the packet — that's a per-4-byte-chunk reversal. So a
+    sessionID `[a b c d e f g h ...]` becomes `[d c b a h g f e ...]` on the
+    wire. Same swap applied here.
+
+    Length field counts (CRC + op + payload) bytes (all bytes after the
+    sessionID). CRC is encoded per `_huawei_crc_field` (sign-only quirk).
     """
     if len(sessionid) not in (4, 24):
         raise ValueError(f"sessionid must be 4 or 24 bytes, got {len(sessionid)}")
+    sessionid_wire = _byte_swap_4byte_chunks(sessionid)
     body = bytes([op & 0xFF]) + payload
     crc = crc16_ccitt(body)
     body_with_crc = _huawei_crc_field(crc) + body
@@ -117,23 +123,61 @@ def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
         raise ValueError(f"body too large for 15-bit length: {body_len}")
     hi = ((body_len >> 8) & 0x7F) | (LEN_HIGHBIT_SECURE if secure else 0)
     lo = body_len & 0xFF
-    return bytes([PACKHEAD1, PACKHEAD2, hi, lo]) + sessionid + body_with_crc
+    return bytes([PACKHEAD1, PACKHEAD2, hi, lo]) + sessionid_wire + body_with_crc
+
+
+def _byte_swap_4byte_chunks(data: bytes) -> bytes:
+    """Mirror KVMUtil.perIntToByteCon: byte-swap each 4-byte chunk."""
+    if len(data) % 4 != 0:
+        raise ValueError(f"length must be % 4, got {len(data)}")
+    out = bytearray(len(data))
+    for i in range(0, len(data), 4):
+        out[i:i+4] = data[i:i+4][::-1]
+    return bytes(out)
+
+
+def initial_session_keys(verifyvalue: int, secretiv: bytes,
+                         iterations: int = 5000) -> dict[str, bytes]:
+    """Java's Base.initSessionIDAndKey() — initial chassis-wide sessionID + AES keys.
+
+        plain  = str(verifyvalue)          # decimal string ("245898693")
+        salt   = secretiv (16 bytes)
+        iter   = 5000 (from generateStoredPasswordHash 3-arg form)
+        length = 72 bytes
+        ↓
+        sessionID    = out[0:24]
+        kvmSecretKey = out[24:40]    bigEnd = perIntToByteCon(kvm)
+        kbdSecretKey = out[40:56]    bigEnd = perIntToByteCon(kbd)
+        vmmSecretKey = out[56:72]    bigEnd = perIntToByteCon(vmm)
+    """
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    password = str(verifyvalue).encode("ascii")
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=72, salt=secretiv,
+                     iterations=iterations)
+    out = kdf.derive(password)
+    return {
+        "sessionid": out[:24],
+        "kvm_secret_key": out[24:40],
+        "kbd_secret_key": out[40:56],
+        "vmm_secret_key": out[56:72],
+        "kvm_secret_key_bigend": _byte_swap_4byte_chunks(out[24:40]),
+        "kbd_secret_key_bigend": _byte_swap_4byte_chunks(out[40:56]),
+        "vmm_secret_key_bigend": _byte_swap_4byte_chunks(out[56:72]),
+    }
 
 
 def derive_sessionid_pbkdf2(verifyvalueext_hex: str, salt: bytes,
                             iterations: int = 5000, length: int = 24) -> bytes:
-    """24-byte sessionID per BladeThread.java:339.
+    """Post-suite-negotiation sessionID per BladeThread.java:339.
 
-    plain = verifyvalueext (the embed's 32-hex-char string) as char[]
-    salt  = secretiv (16 bytes from embed)
-    iter  = Base.RAPMSG_CLOSE_TIME = 5000 initially (may rotate via setSuitePack)
-    out   = 24 bytes (PBKDF2-HMAC-SHA1)
+    NOTE: this is NOT used for the first REQ_BLADE_PRESENT packet. It rotates
+    AFTER setSuitePack (op 68) negotiates a new iteration count. The initial
+    sessionID comes from `initial_session_keys()` instead.
     """
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    # Java's char[] is UTF-16; ASCII hex chars become 16-bit codepoints with high
-    # byte = 0. PBEKeySpec uses the chars' UTF-8 bytes (Java's PBE convention).
-    # For pure ASCII hex, UTF-8 == ASCII (1 byte per char), so encode("ascii"):
     password = verifyvalueext_hex.encode("ascii")
     kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=length, salt=salt,
                      iterations=iterations)
