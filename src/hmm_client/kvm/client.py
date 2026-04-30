@@ -56,6 +56,7 @@ OP_KEY_PACK              = 3
 OP_MOUSE_PACK            = 5
 OP_CONTR_RATE            = 28   # frame-rate hint; payload = [framerate_byte]
 OP_MOUSE_MODE            = 36
+OP_MONITOR_BLADE         = 23   # PackData.monitorBlade; "wake/refresh" hint
 
 DEFAULT_FRAMERATE = 35   # = Base.THIRTY_FRAME
 
@@ -198,11 +199,14 @@ class KvmClient:
             (self.host, port), timeout=15.0)
         self.blade_sock.settimeout(30.0)
 
-        # Per pcap: heartbeat -> connectBlade -> contrRate -> connectBlade
+        # Per pcap: heartbeat -> connectBlade -> contrRate -> connectBlade.
+        # Then monitorBlade(slot, 1) acts as a "send me current screen" hint —
+        # without it, idle blades only produce sentinel deltas.
         self._send_blade_heartbeat()
         self._send_connect_blade(slot, color_bit=0, fpeg_alg=False)
         self._send_contr_rate(DEFAULT_FRAMERATE)
         self._send_connect_blade(slot, color_bit=0, fpeg_alg=False)
+        self._send_monitor_blade(slot)
 
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop, daemon=True, name=f"kvm-hb-{slot}")
@@ -266,6 +270,14 @@ class KvmClient:
         self.blade_sock.sendall(pack_kvm_frame(
             OP_CONTR_RATE, bytes([framerate & 0xFF]),
             self._blade_sid(), secure=False))
+
+    def _send_monitor_blade(self, blade_no: int) -> None:
+        """monitorBlade (op 23) — body [bladeNO, 1]; nudges chassis to push frame."""
+        if self.blade_sock is None:
+            return
+        body = bytes([blade_no & 0xFF, 1])
+        self.blade_sock.sendall(pack_kvm_frame(
+            OP_MONITOR_BLADE, body, self._blade_sid(), secure=False))
 
     def _send_blade_heartbeat(self) -> None:
         """Per-blade heartbeat. Payload is `[bladeNO]` per captured pcap."""
@@ -352,10 +364,11 @@ class KvmClient:
 
     # ------------------------------------------------------------------
     def frames(self) -> Iterator[tuple[int, int, int, bytes]]:
-        """Yield (img_id, width, height, encoded_data) tuples.
+        """Yield (img_id, width, height, encoded_data) tuples — real frames only.
 
-        `encoded_data` is the raw OldRLE blob; caller decodes via
-        `decode_old_rle(data, w, h)`.
+        The chassis sends ~99% sentinel/keepalive deltas (total=5,
+        w=33408, h=480). We drop those — the browser keeps the last
+        real keyframe on its canvas.
         """
         if self.blade_sock is None:
             raise RuntimeError("call open() before frames()")
@@ -380,6 +393,9 @@ class KvmClient:
                 total = int.from_bytes(p[4:8], "big")
                 w = int.from_bytes(p[8:10], "big")
                 h = int.from_bytes(p[10:12], "big")
+                # Drop sentinels: tiny payload OR absurd dimensions
+                if total < 100 or w == 0 or h == 0 or w > 4096 or h > 4096:
+                    continue
                 partial[img_id] = {"data": bytearray(), "total": total,
                                    "w": w, "h": h}
             else:
