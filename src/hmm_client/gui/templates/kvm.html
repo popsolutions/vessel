@@ -6,9 +6,27 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* Rudder palette */
+    :root {
+      --rudder-on:      #13beb7;
+      --rudder-off:     #e73b16;
+      --rudder-pending: #f0ab00;
+      --rudder-na:      #abb6bf;
+    }
     body { background: #000; color: #e2e8f0;
            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin:0;
            height: 100vh; display: flex; flex-direction: column; }
+    .pwr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+               background: var(--rudder-pending); vertical-align: middle; margin-right: 4px;
+               animation: pwr-pulse 1.4s ease-in-out infinite; }
+    .pwr-on  .pwr-dot { background: var(--rudder-on);  animation: none; }
+    .pwr-off .pwr-dot { background: var(--rudder-off); animation: none; }
+    .pwr-unknown .pwr-dot { background: var(--rudder-na); animation: none; }
+    .pwr-on  .pwr-text { color: var(--rudder-on); }
+    .pwr-off .pwr-text { color: var(--rudder-off); }
+    .pwr-unknown .pwr-text { color: var(--rudder-na); }
+    .pwr-text { font-weight: bold; }
+    @keyframes pwr-pulse { 50% { opacity: .35; } }
     #status { background: #0b1220; border-bottom: 1px solid #1f2937;
               padding: 8px 16px; display: flex; gap: 14px; align-items: center;
               font-size: 12px; flex-wrap: wrap; flex-shrink: 0; }
@@ -53,6 +71,9 @@
   <a href="/" class="text-emerald-400">← back</a>
   <span class="dim">slot</span> <span>{{ slot }}</span>
   <span class="dim">host</span> <span>{{ host }}</span>
+  <span id="pwr" class="">
+    <span class="pwr-dot"></span><span class="pwr-text">querying…</span>
+  </span>
   <span class="dim">conn</span> <span id="conn">connecting…</span>
   <span class="dim">frame</span> <span id="frame-id">-</span>
   <span class="dim">size</span> <span id="frame-size">-</span>
@@ -178,6 +199,7 @@
     const r = await fetch(`/api/blade/${slot}/power/${act}`, {method: 'POST'});
     const j = await r.json();
     $pout.textContent = j.output || JSON.stringify(j, null, 2);
+    repollSoon();
   }
   async function bootDev(dev) {
     if (!confirm(`Set one-shot boot=${dev} on slot ${slot}?`)) return;
@@ -195,6 +217,25 @@
     const j = await r.json();
     $iout.textContent = `task ${j.task_id} started — see Background tasks on / `;
   }
+  // --- power-state indicator ---------------------------------------------
+  async function refreshPwr() {
+    const $pwr = document.getElementById('pwr');
+    const $txt = $pwr.querySelector('.pwr-text');
+    try {
+      const r = await fetch(`/api/blade/${slot}/powerstate`);
+      const j = await r.json();
+      $pwr.classList.remove('pwr-on', 'pwr-off', 'pwr-unknown');
+      $pwr.classList.add('pwr-' + j.state);
+      $txt.textContent = j.state.toUpperCase();
+    } catch (e) {
+      $pwr.classList.add('pwr-unknown');
+      $txt.textContent = 'ERR';
+    }
+  }
+  refreshPwr();
+  // re-poll after any power button press, with a small delay
+  function repollSoon() { setTimeout(refreshPwr, 4000); }
+
   async function releaseVmedia(hard) {
     const msg = hard
       ? `Hard release on slot ${slot}? This RESETS the iBMC IPMC (~30s).`

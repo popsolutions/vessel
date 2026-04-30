@@ -32,6 +32,13 @@ app = FastAPI(title="hmm — Huawei E9000 web", version="0.0.1")
 _tasks: dict[str, dict[str, Any]] = {}
 _tasks_lock = threading.Lock()
 
+# Per-(host, slot) power-state cache. SEL probes are slow (~10-15s each)
+# so we keep the answer for a short while; the frontend re-asks on its
+# own clock.
+_powerstate_cache: dict[tuple[str, int], tuple[float, str]] = {}
+_powerstate_ttl_seconds = 30.0
+_powerstate_lock = threading.Lock()
+
 
 _HOST_COOKIE = "hmm_host"
 
@@ -85,6 +92,29 @@ def fragment_inventory(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "_grid.html", {
         "blades": blades, "switches": switches,
     })
+
+
+@app.get("/api/blade/{slot}/powerstate")
+def blade_powerstate(request: Request, slot: int) -> JSONResponse:
+    """Return {state: on|off|unknown} for one blade.
+
+    SEL probes are slow (~10-15s); results are cached per (host, slot)
+    for `_powerstate_ttl_seconds`. Frontend fans out parallel requests
+    after the page renders so colors fill in over 10-30s without
+    blocking the initial paint.
+    """
+    import time as _t
+    s = _settings(request)
+    key = (s.hmm_host, slot)
+    now = _t.monotonic()
+    with _powerstate_lock:
+        cached = _powerstate_cache.get(key)
+    if cached and (now - cached[0]) < _powerstate_ttl_seconds:
+        return JSONResponse({"slot": slot, "state": cached[1], "cached": True})
+    state = ops.get_power_state(s, slot)
+    with _powerstate_lock:
+        _powerstate_cache[key] = (now, state)
+    return JSONResponse({"slot": slot, "state": state, "cached": False})
 
 
 @app.get("/api/blade/{slot}/bootdev", response_class=HTMLResponse)

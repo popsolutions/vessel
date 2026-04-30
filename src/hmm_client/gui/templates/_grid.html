@@ -3,13 +3,17 @@
     {% set blade = blades | selectattr('slot', 'equalto', slot) | list %}
     {% if blade %}
       {% set b = blade[0] %}
-      <div class="card card-on rounded p-2 text-xs">
-        <div class="flex justify-between">
-          <span class="font-bold text-emerald-400">B{{ b.slot }}</span>
+      <div class="card rounded p-2 text-xs blade-card pwr-loading"
+           data-slot="{{ b.slot }}">
+        <div class="flex justify-between items-center">
+          <span class="font-bold">
+            <span class="pwr-dot" aria-hidden="true"></span>
+            B{{ b.slot }}
+          </span>
           <span class="text-slate-500">{{ b.model }}</span>
         </div>
         <div class="text-slate-400">{{ b.ibmc_ip }}</div>
-        <div class="mt-1 text-emerald-300 text-[10px]">{{ b.state }}</div>
+        <div class="mt-1 text-[10px] pwr-label">querying…</div>
       </div>
     {% else %}
       <div class="card card-absent rounded p-2 text-xs">

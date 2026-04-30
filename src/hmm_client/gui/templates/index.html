@@ -8,10 +8,31 @@
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    /* Rudder palette: success/compliant green, error red, pending amber, neutral grey */
+    :root {
+      --rudder-on:      #13beb7;
+      --rudder-off:     #e73b16;
+      --rudder-pending: #f0ab00;
+      --rudder-na:      #abb6bf;
+    }
     .card { background: #111827; border: 1px solid #1f2937; }
-    .card-on { border-color: #10b981; }
-    .card-off { border-color: #475569; }
     .card-absent { border-color: #1f2937; opacity: .35; }
+    .blade-card { transition: border-color 200ms, background-color 200ms; }
+    .pwr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+               margin-right: 6px; background: var(--rudder-na); vertical-align: middle; }
+    .pwr-loading { border-color: var(--rudder-pending); }
+    .pwr-loading .pwr-dot { background: var(--rudder-pending); animation: pwr-pulse 1.4s ease-in-out infinite; }
+    .pwr-loading .pwr-label { color: var(--rudder-pending); }
+    .pwr-on  { border-color: var(--rudder-on);  background: rgba(19, 190, 183, 0.08); }
+    .pwr-on  .pwr-dot  { background: var(--rudder-on); }
+    .pwr-on  .pwr-label{ color: var(--rudder-on); }
+    .pwr-off { border-color: var(--rudder-off); background: rgba(231, 59, 22, 0.06); }
+    .pwr-off .pwr-dot  { background: var(--rudder-off); }
+    .pwr-off .pwr-label{ color: var(--rudder-off); }
+    .pwr-unknown { border-color: var(--rudder-na); }
+    .pwr-unknown .pwr-dot  { background: var(--rudder-na); }
+    .pwr-unknown .pwr-label{ color: var(--rudder-na); }
+    @keyframes pwr-pulse { 50% { opacity: .35; } }
   </style>
 </head>
 <body class="text-sm">
@@ -239,6 +260,38 @@
     await fetch('/api/host', { method: 'POST', body: fd });
     location.reload();
   }
+
+  // --- power-state polling ------------------------------------------------
+  // Each blade card exposes data-slot. After the grid renders we fan out
+  // /api/blade/{slot}/powerstate fetches; results land in card colours
+  // (Rudder palette) as they arrive. SEL probes are slow (~10-15s/slot)
+  // so cards stay amber/pulsing until their answer comes in.
+  async function pollPowerState(card) {
+    const slot = card.dataset.slot;
+    try {
+      const r = await fetch(`/api/blade/${slot}/powerstate`);
+      const j = await r.json();
+      card.classList.remove('pwr-loading');
+      card.classList.remove('pwr-on', 'pwr-off', 'pwr-unknown');
+      card.classList.add('pwr-' + j.state);
+      const lbl = card.querySelector('.pwr-label');
+      if (lbl) lbl.textContent = j.state.toUpperCase();
+    } catch (e) {
+      card.classList.remove('pwr-loading');
+      card.classList.add('pwr-unknown');
+      const lbl = card.querySelector('.pwr-label');
+      if (lbl) lbl.textContent = 'ERR';
+    }
+  }
+  function refreshPowerStates(root = document) {
+    root.querySelectorAll('.blade-card[data-slot]').forEach(pollPowerState);
+  }
+  // Initial poll after grid renders
+  document.addEventListener('DOMContentLoaded', () => refreshPowerStates());
+  // After any HTMX swap that touches #grid (e.g. ↻ refresh), poll again
+  document.body.addEventListener('htmx:afterSwap', (ev) => {
+    if (ev.target && ev.target.id === 'grid') refreshPowerStates(ev.target);
+  });
 </script>
 
 </body>

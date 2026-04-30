@@ -133,6 +133,35 @@ def get_boot_device(settings: Settings, slot: int) -> str:
         return ibmc.run("ipmcget -d bootdevice").strip()
 
 
+_ACPI_RE = re.compile(r"ACPI State.*?\| (S\d) state", re.IGNORECASE)
+
+
+def get_power_state(settings: Settings, slot: int) -> str:
+    """Return 'on' / 'off' / 'unknown' for one blade.
+
+    iMana doesn't expose `ipmcget -d powerstate` (set-only). The SEL
+    has the canonical ACPI state events though — most recent
+    "ACPI State | S0 state" = host on, "S5 state" = soft-off. We pull
+    the first SEL page (newest-first) and pick the latest ACPI line.
+    """
+    try:
+        with IBMCSession(settings, slot) as ibmc:
+            out = ibmc.run("ipmcget -d sel -v list", wait=3.0)
+            # if the BMC paged the listing, exit the pager so the channel is clean
+            try:
+                ibmc.run("q", wait=0.5)
+            except Exception:
+                pass
+    except Exception:
+        return "unknown"
+    for line in out.splitlines():
+        m = _ACPI_RE.search(line)
+        if not m:
+            continue
+        return "on" if m.group(1).upper() == "S0" else "off"
+    return "unknown"
+
+
 _SOL_DOWNLOAD_DONE = re.compile(r"Download successfully|sol\.dat.*save|already exists", re.I)
 _SOL_BUSY = re.compile(r"Other user downloading", re.I)
 
