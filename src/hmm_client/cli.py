@@ -187,6 +187,39 @@ def kvm_analyze(
                           f"len={tok.length}  body[:8]={tok.body[:8].hex()}")
 
 
+@app.command("kvm-render")
+def kvm_render(
+    image_bin: str = typer.Argument(..., help="path to a reassembled image .bin "
+                                              "(7004 B for 800x600 POST-screen capture)"),
+    out_png: str = typer.Argument(..., help="output PNG path"),
+    width: int = typer.Option(800, "--width"),
+    height: int = typer.Option(600, "--height"),
+) -> None:
+    """Decode an OldRLE-compressed image to PNG (K2 deliverable).
+
+    Validates the legacy decoder against captured POST-screen frames.
+    Output should look like the BIOS POST screen the chassis was showing
+    when the pcap was taken.
+    """
+    from pathlib import Path
+    from .kvm.codec_old import decode_old_rle, bgr233_to_rgb888
+    data = Path(image_bin).read_bytes()
+    fb = decode_old_rle(data, width, height)
+    console.print(f"[yellow]decoded {len(data)} B input -> {len(fb)} B framebuffer "
+                  f"({width}x{height}, BGR233 8bpp)[/]")
+    if len(fb) != width * height:
+        console.print(f"[red]framebuffer size mismatch — expected {width*height}[/]")
+    rgb = bgr233_to_rgb888(fb)
+    try:
+        from PIL import Image
+        img = Image.frombytes("RGB", (width, height), rgb)
+        img.save(out_png)
+        console.print(f"[green]wrote {out_png} ({width}x{height} RGB888)[/]")
+    except ImportError:
+        console.print("[red]Pillow not installed; saving raw RGB instead[/]")
+        Path(out_png + ".rgb").write_bytes(rgb)
+
+
 @app.command()
 def gui(
     host: str = typer.Option("127.0.0.1", "--host"),
