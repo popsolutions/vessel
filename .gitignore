@@ -27,3 +27,7 @@ discovery/*.json
 # Reverse engineering artifacts — Huawei IP, do not redistribute
 re/vconsole.jar
 re/decompiled/
+
+# Live KVM/vmedia byte captures (extracted from pcaps; may contain
+# session-scoped session IDs / encrypted blobs)
+captures/

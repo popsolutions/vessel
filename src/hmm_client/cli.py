@@ -146,6 +146,47 @@ def sol(
         console.print(f"[green]wrote {len(text)} bytes to {save}[/]")
 
 
+@app.command("kvm-analyze")
+def kvm_analyze(
+    capture: str = typer.Argument(..., help="path to a server→client .bin TCP dump"),
+    show_tiles: int = typer.Option(0, "--show-tiles",
+                                   help="dump the first N tile tokens of the first image"),
+) -> None:
+    """Offline analyzer for a captured iKVM server→client byte stream.
+
+    Reports per-frame breakdown, reassembled images, and tile-token stats —
+    the K1 deliverable on the road to a working KVM viewer.
+    """
+    from pathlib import Path
+    from .kvm.transport import (
+        parse_kvm_stream, reassemble_images, summarise,
+        classify_tiles_jpeg_walk,
+    )
+    data = Path(capture).read_bytes()
+    frames = parse_kvm_stream(data)
+    by_op: dict[int, int] = {}
+    for fr in frames:
+        by_op[fr.op] = by_op.get(fr.op, 0) + 1
+    console.print(f"[bold]parsed {len(frames)} frames[/] from {len(data)} bytes "
+                  f"({len(data) - sum(4 + f.body_len for f in frames)} trailing)")
+    console.print(f"[yellow]ops:[/] " + ", ".join(
+        f"0x{op:02x}={n}" for op, n in sorted(by_op.items())))
+    images = reassemble_images(frames)
+    console.print(f"[bold]reassembled {len(images)} image(s)[/]")
+    for img in images:
+        s = summarise(img)
+        console.print(f"  img 0x{img.img_id:02x}: {s['wxh']} {s['size']} B  "
+                      f"tiles_walked={s['walked_tokens']}/{s['expected_tiles']}  "
+                      f"types={s['tile_types']}  unwalked={s['unwalked_bytes']} B")
+    if show_tiles and images:
+        console.print(f"\n[yellow]first {show_tiles} tile tokens of img 0x"
+                      f"{images[0].img_id:02x}:[/]")
+        for tok in list(classify_tiles_jpeg_walk(images[0]))[:show_tiles]:
+            console.print(f"  #{tok.index:3d}  off={tok.offset:6d}  "
+                          f"zt={tok.zip_type} rt={tok.r_zip_type}  "
+                          f"len={tok.length}  body[:8]={tok.body[:8].hex()}")
+
+
 @app.command()
 def gui(
     host: str = typer.Option("127.0.0.1", "--host"),
