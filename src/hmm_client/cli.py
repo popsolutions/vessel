@@ -123,6 +123,18 @@ def drift(snapshot_dir: str = typer.Argument(..., help="path to a snapshot dir")
     raise typer.Exit(detect_drift(Path(snapshot_dir)))
 
 
+@app.command()
+def gui(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8765, "--port"),
+    no_browser: bool = typer.Option(False, "--no-browser",
+                                    help="don't open the browser automatically"),
+) -> None:
+    """Run the local web GUI (FastAPI + HTMX) at http://host:port/."""
+    from .gui.app import run as run_gui
+    run_gui(host=host, port=port, open_browser=not no_browser)
+
+
 vmedia_app = typer.Typer(help="VirtualMedia (mount ISO on a blade)")
 app.add_typer(vmedia_app, name="vmedia")
 

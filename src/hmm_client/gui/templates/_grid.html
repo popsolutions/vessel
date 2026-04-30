@@ -1,0 +1,42 @@
+<div class="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+  {% for slot in range(1, 17) %}
+    {% set blade = blades | selectattr('slot', 'equalto', slot) | list %}
+    {% if blade %}
+      {% set b = blade[0] %}
+      <div class="card card-on rounded p-2 text-xs">
+        <div class="flex justify-between">
+          <span class="font-bold text-emerald-400">B{{ b.slot }}</span>
+          <span class="text-slate-500">{{ b.model }}</span>
+        </div>
+        <div class="text-slate-400">{{ b.ibmc_ip }}</div>
+        <div class="mt-1 text-emerald-300 text-[10px]">{{ b.state }}</div>
+      </div>
+    {% else %}
+      <div class="card card-absent rounded p-2 text-xs">
+        <div class="font-bold text-slate-600">B{{ slot }}</div>
+        <div class="text-slate-700">empty</div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div class="mt-3 grid grid-cols-4 md:grid-cols-8 gap-2">
+  {% for slot in range(1, 5) %}
+    {% set sw = switches | selectattr('slot', 'equalto', slot) | list %}
+    {% if sw %}
+      {% set s = sw[0] %}
+      <div class="card card-on rounded p-2 text-xs">
+        <div class="flex justify-between">
+          <span class="font-bold text-cyan-400">Sw{{ s.slot }}</span>
+          <span class="text-slate-500">{{ s.model }}</span>
+        </div>
+        <div class="text-slate-400">{{ s.mgmt_ip }}</div>
+      </div>
+    {% else %}
+      <div class="card card-absent rounded p-2 text-xs">
+        <div class="font-bold text-slate-600">Sw{{ slot }}</div>
+        <div class="text-slate-700">empty</div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>

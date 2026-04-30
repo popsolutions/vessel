@@ -1,0 +1,49 @@
+{% if not tasks %}
+  <p class="text-xs text-slate-500">no tasks</p>
+{% else %}
+<table class="text-xs w-full">
+  <thead class="text-slate-500">
+    <tr>
+      <th class="text-left pr-3 py-1">ID</th>
+      <th class="text-left pr-3">kind</th>
+      <th class="text-left pr-3">state</th>
+      <th class="text-left pr-3">detail</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr class="border-t border-slate-800">
+      <td class="pr-3 py-1 font-mono">{{ t.id }}</td>
+      <td class="pr-3">{{ t.kind }}</td>
+      <td class="pr-3">
+        {% if t.state == 'running' %}
+          <span class="text-amber-400">● running</span>
+        {% elif t.state == 'done' or t.state == 'ended' %}
+          <span class="text-emerald-400">✓ {{ t.state }}</span>
+        {% elif t.state == 'cancelling' %}
+          <span class="text-slate-400">… cancelling</span>
+        {% else %}
+          <span class="text-rose-400">✗ {{ t.state }}</span>
+        {% endif %}
+      </td>
+      <td class="pr-3 text-slate-400">
+        {% if t.kind == 'vmedia' %}
+          slot={{ t.slot }} iso={{ t.iso }}
+        {% endif %}
+        {% if t.result %}<span class="text-emerald-300">{{ t.result }}</span>{% endif %}
+        {% if t.error %}<span class="text-rose-300">{{ t.error }}</span>{% endif %}
+      </td>
+      <td>
+        {% if t.state == 'running' and t.kind == 'vmedia' %}
+        <button class="text-xs text-rose-400 hover:text-rose-300"
+                hx-post="/api/task/{{ t.id }}/cancel" hx-swap="none">
+          stop
+        </button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>hmm — Huawei E9000 ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .card { background: #111827; border: 1px solid #1f2937; }
+    .card-on { border-color: #10b981; }
+    .card-off { border-color: #475569; }
+    .card-absent { border-color: #1f2937; opacity: .35; }
+  </style>
+</head>
+<body class="text-sm">
+
+<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+  <div>
+    <span class="text-emerald-400 font-bold">hmm</span>
+    <span class="text-slate-400 ml-3">Huawei E9000 @ {{ host }}</span>
+  </div>
+  <div class="text-slate-500 text-xs">{{ now }}</div>
+</header>
+
+<main class="px-6 py-4 space-y-6">
+
+  <section>
+    <h2 class="text-slate-300 font-bold mb-2 flex items-center justify-between">
+      <span>Chassis</span>
+      <button class="text-xs text-slate-400 hover:text-emerald-400"
+              hx-get="/api/inventory" hx-target="#grid" hx-swap="innerHTML">
+        ↻ refresh
+      </button>
+    </h2>
+    <div id="grid">
+      {% include "_grid.html" %}
+    </div>
+  </section>
+
+  <section class="grid md:grid-cols-2 gap-6">
+    <div class="card rounded p-4">
+      <h3 class="font-bold mb-3 text-emerald-400">Power / Boot</h3>
+      <form id="action-form" class="space-y-2">
+        <div class="flex gap-2 items-center">
+          <label class="w-24 text-slate-400">Slot:</label>
+          <input type="number" name="slot" min="1" max="32" value="1"
+                 class="bg-slate-800 px-2 py-1 rounded w-20" required>
+        </div>
+      </form>
+      <div class="mt-3 grid grid-cols-3 gap-2">
+        <button class="bg-emerald-700 hover:bg-emerald-600 px-2 py-1 rounded"
+                onclick="powerAct('on')">Power On</button>
+        <button class="bg-rose-700 hover:bg-rose-600 px-2 py-1 rounded"
+                onclick="powerAct('off')">Power Off</button>
+        <button class="bg-amber-700 hover:bg-amber-600 px-2 py-1 rounded"
+                onclick="powerAct('cycle')">Power Cycle</button>
+      </div>
+      <div class="mt-2 grid grid-cols-3 gap-2">
+        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
+                onclick="bootDev('hdd')">Boot HDD</button>
+        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
+                onclick="bootDev('cd')">Boot CD</button>
+        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
+                onclick="bootDev('pxe')">Boot PXE</button>
+      </div>
+      <pre id="action-out" class="mt-3 text-xs text-slate-400 whitespace-pre-wrap"></pre>
+    </div>
+
+    <div class="card rounded p-4">
+      <h3 class="font-bold mb-3 text-emerald-400">Mount ISO (vmedia)</h3>
+      <form hx-post="/api/vmedia/mount" hx-encoding="multipart/form-data"
+            hx-target="#vmedia-out" hx-swap="innerHTML"
+            class="space-y-2">
+        <div class="flex gap-2 items-center">
+          <label class="w-24 text-slate-400">Slot:</label>
+          <input type="number" name="slot" min="1" max="32" value="1"
+                 class="bg-slate-800 px-2 py-1 rounded w-20" required>
+        </div>
+        <div class="flex gap-2 items-center">
+          <label class="w-24 text-slate-400">ISO path:</label>
+          <input type="text" name="iso_path" placeholder="/path/to/file.iso"
+                 class="bg-slate-800 px-2 py-1 rounded flex-1" required>
+        </div>
+        <label class="flex gap-2 items-center text-xs text-slate-400">
+          <input type="checkbox" name="hard_reset" value="true">
+          auto hard-reset iBMC if CN_EXIST persists (~30s)
+        </label>
+        <button type="submit"
+                class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded">
+          Mount
+        </button>
+      </form>
+      <pre id="vmedia-out" class="mt-3 text-xs text-slate-400 whitespace-pre-wrap"></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="text-slate-300 font-bold mb-2 flex items-center justify-between">
+      <span>Background tasks</span>
+      <span class="text-xs text-slate-500">auto-refresh 3s</span>
+    </h2>
+    <div id="tasks" hx-get="/api/tasks" hx-trigger="load, every 3s" hx-swap="innerHTML">
+      {% include "_tasks.html" %}
+    </div>
+  </section>
+
+  <section>
+    <h2 class="text-slate-300 font-bold mb-2">Snapshot</h2>
+    <button class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded"
+            hx-post="/api/snapshot" hx-swap="none">
+      Backup HMM + switches now
+    </button>
+    <p class="text-xs text-slate-500 mt-2">
+      Output goes to <code>./snapshots/&lt;UTC-stamp&gt;/</code>. Watch the Background-tasks panel.
+    </p>
+  </section>
+
+</main>
+
+<script>
+  function getSlot() {
+    return document.querySelector('#action-form input[name="slot"]').value;
+  }
+  function showOut(msg) {
+    document.getElementById('action-out').textContent = msg;
+  }
+  async function powerAct(act) {
+    const slot = getSlot();
+    if (!confirm(`power ${act} on slot ${slot}?`)) return;
+    showOut(`running power ${act}…`);
+    const r = await fetch(`/api/blade/${slot}/power/${act}`, { method: 'POST' });
+    const j = await r.json();
+    showOut(JSON.stringify(j, null, 2));
+    htmx.ajax('GET', '/api/inventory', '#grid');
+  }
+  async function bootDev(dev) {
+    const slot = getSlot();
+    if (!confirm(`set boot=${dev} on slot ${slot}?`)) return;
+    showOut(`setting boot ${dev}…`);
+    const r = await fetch(`/api/blade/${slot}/boot/${dev}`, { method: 'POST' });
+    const j = await r.json();
+    showOut(JSON.stringify(j, null, 2));
+  }
+</script>
+
+</body>
+</html>
