@@ -329,27 +329,52 @@ def kvm_canvas(request: Request, slot: int) -> HTMLResponse:
 async def kvm_ws(ws: WebSocket, slot: int) -> None:
     """Stream decoded KVM frames as PNG bytes.
 
-    K3 mode: replays bytes from `HMM_KVM_REPLAY_CAPTURE` env var (path
-    to a `.bin` server→client dump). When unset, falls back to
-    `./captures/stream_4_s2c.bin` if present.
-
-    K3.5 will swap the source for a live `KvmClient.frames()` generator
-    without changing the wire format on this socket.
+    Two modes, switched via the `live` query parameter:
+      * `?live=1` (default when env HMM_KVM_LIVE_DEFAULT=1) — runs the
+        full handshake against the chassis and forwards each decoded
+        frame as PNG. On handshake failure, falls back to replay mode
+        with a banner explaining what broke.
+      * `?live=0` — replays a captured `.bin` from $HMM_KVM_REPLAY_CAPTURE
+        (or `./captures/stream_4_s2c.bin`); used for offline UI work.
     """
     await ws.accept()
+    qs = dict(ws.query_params)
+    default_live = os.environ.get("HMM_KVM_LIVE_DEFAULT", "1") == "1"
+    want_live = qs.get("live", "1" if default_live else "0") == "1"
+
+    s = _settings_from_ws(ws)
+
+    if want_live:
+        try:
+            await _stream_live(ws, s, slot)
+            return
+        except WebSocketDisconnect:
+            return
+        except Exception as e:
+            log_msg = f"live handshake failed for slot {slot}: {e!s}"
+            try:
+                await ws.send_json({"type": "info",
+                                    "message": log_msg + " — falling back to replay"})
+            except Exception:
+                return
+
+    # replay fallback
     cap_env = os.environ.get("HMM_KVM_REPLAY_CAPTURE", "").strip()
     if not cap_env:
         default = Path("captures") / "stream_4_s2c.bin"
         if default.exists():
             cap_env = str(default)
     if not cap_env or not Path(cap_env).exists():
-        await ws.send_json({
-            "type": "error",
-            "message": ("no replay capture configured; set "
-                        "HMM_KVM_REPLAY_CAPTURE=/path/to/stream.bin or "
-                        "drop a .bin into ./captures/. Live mode = K3.5."),
-        })
-        await ws.close()
+        try:
+            await ws.send_json({
+                "type": "error",
+                "message": ("no replay capture configured and live failed; "
+                            "set HMM_KVM_REPLAY_CAPTURE=/path/to/stream.bin "
+                            "or drop a .bin into ./captures/."),
+            })
+            await ws.close()
+        except Exception:
+            pass
         return
 
     from ..kvm.replay import replay_capture_to_pngs
@@ -358,11 +383,11 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
     try:
         await ws.send_json({"type": "info",
                             "message": f"replay slot={slot} src={cap_env}"})
-        while True:  # loop the capture forever so the page stays animated
+        while True:
             frames_sent = 0
             for img_id, png in replay_capture_to_pngs(cap_env):
                 await ws.send_json({"type": "frame", "img_id": img_id,
-                                    "size": len(png)})
+                                    "size": len(png), "source": "replay"})
                 await ws.send_bytes(png)
                 frames_sent += 1
                 await asyncio.sleep(frame_delay)
@@ -372,6 +397,50 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
             await asyncio.sleep(1.0)
     except WebSocketDisconnect:
         return
+
+
+def _settings_from_ws(ws: WebSocket) -> Settings:
+    """Pull the chassis-host cookie off the WebSocket scope."""
+    cookie_header = ""
+    for k, v in ws.scope.get("headers", []):
+        if k == b"cookie":
+            cookie_header = v.decode(errors="replace")
+            break
+    host = None
+    for piece in cookie_header.split(";"):
+        piece = piece.strip()
+        if piece.startswith(_HOST_COOKIE + "="):
+            host = piece.split("=", 1)[1]
+            break
+    return Settings.load(host_override=host)
+
+
+async def _stream_live(ws: WebSocket, s: Settings, slot: int) -> None:
+    """Run the live KVM handshake, push decoded PNGs through the WebSocket.
+
+    Frame production is blocking I/O, so we run the generator in a
+    thread and bridge to asyncio via `run_in_executor`.
+    """
+    from ..kvm.client import live_pngs
+
+    loop = asyncio.get_running_loop()
+    await ws.send_json({"type": "info",
+                        "message": f"live: connecting host={s.hmm_host} slot={slot}"})
+
+    gen = live_pngs(s.hmm_host, s.hmm_user, s.hmm_password, slot,
+                    verify_tls=s.verify_tls)
+    sentinel = object()
+
+    while True:
+        # pull the next (img_id, png) pair off the (blocking) generator
+        item = await loop.run_in_executor(None, lambda: next(gen, sentinel))
+        if item is sentinel:
+            await ws.send_json({"type": "info", "message": "live stream ended"})
+            return
+        img_id, png = item
+        await ws.send_json({"type": "frame", "img_id": img_id,
+                            "size": len(png), "source": "live"})
+        await ws.send_bytes(png)
 
 
 @app.post("/api/vmedia/{slot}/release")
