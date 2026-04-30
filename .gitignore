@@ -23,3 +23,7 @@ snapshots/*/
 discovery/*/
 discovery/*.json
 !discovery/.gitkeep
+
+# Reverse engineering artifacts — Huawei IP, do not redistribute
+re/vconsole.jar
+re/decompiled/
