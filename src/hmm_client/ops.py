@@ -103,10 +103,8 @@ def power(settings: Settings, slot: int, action: str) -> str:
     """
     if action in POWER_VALUES:
         cmd = f"ipmcset -d powerstate -v {POWER_VALUES[action]}"
-        needs_confirm = False
     elif action in RESET_VALUES:
         cmd = f"ipmcset -d frucontrol -v {RESET_VALUES[action]}"
-        needs_confirm = True
     else:
         raise ValueError(
             f"unknown power action: {action!r} "
@@ -114,7 +112,8 @@ def power(settings: Settings, slot: int, action: str) -> str:
         )
     with IBMCSession(settings, slot) as ibmc:
         out1 = ibmc.run(cmd)
-        if needs_confirm and "Y/N" in out1:
+        # Both powerstate and frucontrol show the same Y/N prompt; auto-confirm.
+        if "Y/N" in out1 or "[Y/N]" in out1:
             out2 = ibmc.run("Y", wait=2.5)
             return out1 + "\n" + out2
         return out1
