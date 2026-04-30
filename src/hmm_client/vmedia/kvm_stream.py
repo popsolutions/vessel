@@ -87,12 +87,16 @@ def per_int_to_byte_con(value_int: int) -> bytes:
 
 def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
                    secure: bool = False) -> bytes:
-    """Build a KVM frame for the wire."""
+    """Build a KVM frame for the wire (client -> server: includes sessionID).
+
+    Wire CRC is little-endian per KVMUtil.diviStream parser logic. The length
+    field counts (CRC + op + payload) bytes, i.e. all bytes after sessionID.
+    """
     if len(sessionid) not in (4, 24):
         raise ValueError(f"sessionid must be 4 or 24 bytes, got {len(sessionid)}")
     body = bytes([op & 0xFF]) + payload
     crc = crc16_ccitt(body)
-    body_with_crc = struct.pack(">H", crc) + body  # CRC big-endian, then op+payload
+    body_with_crc = struct.pack("<H", crc) + body  # CRC LITTLE-endian (low byte first)
     body_len = len(body_with_crc)  # = 2 + 1 + len(payload)
     if body_len > 0x7FFF:
         raise ValueError(f"body too large for 15-bit length: {body_len}")
@@ -101,29 +105,36 @@ def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
     return bytes([PACKHEAD1, PACKHEAD2, hi, lo]) + sessionid + body_with_crc
 
 
-def recv_kvm_frame(sock: socket.socket, timeout: float = 5.0) -> KvmFrame:
-    """Read one KVM frame from the socket. SessionID size is read from header."""
+def recv_kvm_response(sock: socket.socket, timeout: float = 5.0) -> KvmFrame:
+    """Read one server-sent KVM frame.
+
+    Server responses do NOT echo the sessionID. Layout:
+        [FE F6 lenH lenL] [CRC LE 2] [op 1] [payload]
+    """
     sock.settimeout(timeout)
     head = _recv_exact(sock, 4)
     if head[0] != PACKHEAD1 or head[1] != PACKHEAD2:
         raise ValueError(f"bad magic: {head[:2].hex()} (want fef6)")
-    is_secure = bool(head[2] & LEN_HIGHBIT_SECURE)
-    body_len = ((head[2] & 0x7F) << 8) | head[3]
-    sessid_len = 24 if is_secure else 4
-    sessionid = _recv_exact(sock, sessid_len)
+    body_len = (head[2] << 8) | head[3]  # response: full byte for length high
     body_with_crc = _recv_exact(sock, body_len)
     if len(body_with_crc) < 3:
         raise ValueError(f"body too small ({len(body_with_crc)} bytes)")
-    crc_be = body_with_crc[:2]
+    crc_le = body_with_crc[:2]
     body = body_with_crc[2:]
-    expected = struct.unpack(">H", crc_be)[0]
+    expected = struct.unpack("<H", crc_le)[0]  # LE on the wire
     actual = crc16_ccitt(body)
     op = body[0]
     payload = body[1:]
     return KvmFrame(
-        sessionid=sessionid, secure=is_secure,
+        sessionid=b"",  # server doesn't echo
+        secure=False,
         op=op, payload=payload, crc_ok=(expected == actual),
     )
+
+
+# Backward-compat alias (still used by older callers; will switch to *_response)
+def recv_kvm_frame(sock: socket.socket, timeout: float = 5.0) -> KvmFrame:
+    return recv_kvm_response(sock, timeout=timeout)
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
