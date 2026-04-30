@@ -51,6 +51,7 @@ class AckCode(IntEnum):
     CLOSE_UPDATA = 34
     CLOSE_IPCONFIG = 35
     MIC_SENT = 36
+    CN_EXIST = 49     # "connection exists" — vmedia session already active for this blade
 
 
 class DeviceType(IntEnum):

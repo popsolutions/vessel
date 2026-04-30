@@ -404,9 +404,41 @@ def run_session(conn: Connection, backing: sff8020i.IsoBacking,
 # Top-level entry: mount an ISO end-to-end
 # ---------------------------------------------------------------------------
 
+def force_release_vmedia(settings: Settings, slot: int) -> None:
+    """Try to break a stuck vmedia session for a blade (CN_EXIST recovery).
+
+    Strategy: open a socket to the VM data plane port and send CLOSE_VM
+    + SHUTDOWN frames un-authenticated. Some iBMC firmwares accept these
+    even without prior CERTIFY and use them to hint that the previous
+    session should be torn down.
+    """
+    from .login import login as _login
+    sess = _login(settings.hmm_host, settings.hmm_user, settings.hmm_password,
+                  verify_tls=settings.verify_tls)
+    port = sess.vmedia_port(slot)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(5.0)
+    try:
+        s.connect((sess.host, port))
+        # Best effort — send each device-type close + final shutdown
+        for device in (DeviceType.CDROM, DeviceType.FLOPPY):
+            with contextlib.suppress(Exception):
+                s.sendall(pack_header(OpCode.CLOSE_VM, flags=int(device) & 0x03))
+                time.sleep(0.2)
+        with contextlib.suppress(Exception):
+            s.sendall(pack_header(OpCode.SHUTDOWN))
+            time.sleep(0.2)
+    finally:
+        with contextlib.suppress(Exception):
+            s.shutdown(socket.SHUT_RDWR)
+        s.close()
+    console.print(f"[dim]release attempt sent to slot {slot} on port {port}[/]")
+
+
 def mount_iso(settings: Settings, slot: int, iso_path: str | Path,
               kvm_port: int = PER_BLADE_KVM_PORT,
-              on_idle: Callable[[], bool] | None = None) -> None:
+              on_idle: Callable[[], bool] | None = None,
+              auto_release: bool = True) -> None:
     """Full vmedia mount flow.
 
     1. HMM Web login + extract per-session keys
@@ -426,15 +458,31 @@ def mount_iso(settings: Settings, slot: int, iso_path: str | Path,
     console.print(f"  codekey nego ok  sessionID derived")
 
     vm_port = sess.vmedia_port(slot)
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(CONNECT_TIMEOUT)
-    s.connect((sess.host, vm_port))
-    local_ip = socket.inet_aton(s.getsockname()[0])
 
-    s.sendall(_pack_certify_id(sessionid=keys["sessionid"], local_ip=local_ip))
-    head = parse_header(_recv_exact(s, FRAME_HEAD_SIZE, timeout=RECV_TIMEOUT))
+    def _connect_and_certify() -> socket.socket:
+        ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ss.settimeout(CONNECT_TIMEOUT)
+        ss.connect((sess.host, vm_port))
+        ip = socket.inet_aton(ss.getsockname()[0])
+        ss.sendall(_pack_certify_id(sessionid=keys["sessionid"], local_ip=ip))
+        h = parse_header(_recv_exact(ss, FRAME_HEAD_SIZE, timeout=RECV_TIMEOUT))
+        return ss, h
+
+    s, head = _connect_and_certify()
+    if head.op == OpCode.ACK and head.ack_or_sub == AckCode.CN_EXIST and auto_release:
+        s.close()
+        console.print("[yellow]CN_EXIST: stale vmedia session detected; auto-releasing...[/]")
+        force_release_vmedia(settings, slot)
+        time.sleep(2.0)
+        s, head = _connect_and_certify()
     if head.op != OpCode.ACK or head.ack_or_sub != AckCode.CERTIFY_PASS:
         s.close()
+        if head.ack_or_sub == AckCode.CN_EXIST:
+            raise RuntimeError(
+                f"vmedia: blade {slot} session still locked (CN_EXIST). "
+                f"iBMC may need a manual reset (`ipmcset -d reset` from inside) "
+                f"or wait for its session timeout."
+            )
         raise RuntimeError(f"CERTIFY_ID rejected: op={head.op} sub={head.ack_or_sub}")
     console.print("  CERTIFY_PASS ✓")
 

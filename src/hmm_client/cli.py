@@ -133,19 +133,27 @@ def vmedia_mount(
     iso: str = typer.Option(..., "--iso", help="path to .iso file to expose as virtual CDROM"),
     kvm_port: int = typer.Option(2200, "--kvm-port",
                                  help="per-blade KVM stream port for codekey nego (default 2200, blade1)"),
+    no_auto_release: bool = typer.Option(False, "--no-auto-release",
+                                         help="don't try to force-release a stuck CN_EXIST session"),
 ) -> None:
-    """Mount an ISO on a blade as a virtual CDROM.
-
-    Stays in foreground running the SCSI loop until Ctrl-C or server tears
-    down. Combine with `hmm boot <slot> cd --reboot` in another terminal to
-    boot the blade from the mounted ISO.
-    """
+    """Mount an ISO on a blade as a virtual CDROM."""
     from .vmedia.client import mount_iso
     s = Settings.load()
     try:
-        mount_iso(s, slot=slot, iso_path=iso, kvm_port=kvm_port)
+        mount_iso(s, slot=slot, iso_path=iso, kvm_port=kvm_port,
+                  auto_release=not no_auto_release)
     except KeyboardInterrupt:
         console.print("\n[yellow]Ctrl-C — closing session[/]")
+
+
+@vmedia_app.command("release")
+def vmedia_release(
+    slot: int = typer.Option(..., "--slot", help="blade slot 1..32"),
+) -> None:
+    """Force-release a stale vmedia session on a blade (recovery from CN_EXIST)."""
+    from .vmedia.client import force_release_vmedia
+    s = Settings.load()
+    force_release_vmedia(s, slot)
 
 
 sessions_app = typer.Typer(help="Manage Redfish sessions on the HMM")
