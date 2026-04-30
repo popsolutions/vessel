@@ -17,9 +17,25 @@
 <body class="text-sm">
 
 <header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-  <div>
+  <div class="flex items-center gap-4">
     <span class="text-emerald-400 font-bold">hmm</span>
-    <span class="text-slate-400 ml-3">Huawei E9000 @ {{ host }}</span>
+    <span class="text-slate-400">Huawei E9000 @</span>
+    <form id="host-form" class="flex items-center gap-2"
+          onsubmit="setHost(event)">
+      <input id="host-input" type="text" name="host" value="{{ host }}"
+             class="bg-slate-800 px-2 py-1 rounded w-44 text-sm" required
+             placeholder="HMM IP or hostname">
+      <button type="submit"
+              class="bg-emerald-700 hover:bg-emerald-600 px-2 py-1 rounded text-xs">
+        use
+      </button>
+      <button type="button" onclick="resetHost()"
+              class="text-xs text-slate-400 hover:text-emerald-400"
+              title="reset to .env default ({{ default_host }})">
+        reset
+      </button>
+    </form>
+    <span id="host-msg" class="text-xs text-slate-500"></span>
   </div>
   <div class="text-slate-500 text-xs">{{ now }}</div>
 </header>
@@ -34,6 +50,11 @@
         ↻ refresh
       </button>
     </h2>
+    {% if inventory_error %}
+    <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded mb-2">
+      {{ inventory_error }}
+    </div>
+    {% endif %}
     <div id="grid">
       {% include "_grid.html" %}
     </div>
@@ -203,6 +224,20 @@
     }
     const j = await r.json();
     if (j.url) window.open(j.url, `kvm-slot-${slot}`);
+  }
+
+  async function setHost(ev) {
+    ev.preventDefault();
+    const fd = new FormData(document.getElementById('host-form'));
+    const r = await fetch('/api/host', { method: 'POST', body: fd });
+    const j = await r.json();
+    document.getElementById('host-msg').textContent = `using ${j.host} — reloading…`;
+    location.reload();
+  }
+  async function resetHost() {
+    const fd = new FormData(); fd.set('host', '');
+    await fetch('/api/host', { method: 'POST', body: fd });
+    location.reload();
   }
 </script>
 

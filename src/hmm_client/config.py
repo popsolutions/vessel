@@ -24,9 +24,17 @@ class Settings:
     git_token: str
 
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls, host_override: str | None = None) -> "Settings":
+        """Load Settings from env, optionally swapping `hmm_host`.
+
+        The GUI uses `host_override` to honour the user's per-session
+        chassis selection (cookie). All other fields stay as the .env
+        defaults — credentials and TLS posture are assumed to apply
+        across chassis in the same management network.
+        """
         return cls(
-            hmm_host=os.environ["HMM_HOST"],
+            hmm_host=(host_override.strip() if host_override and host_override.strip()
+                      else os.environ["HMM_HOST"]),
             hmm_user=os.environ["HMM_USER"],
             hmm_password=os.environ["HMM_PASSWORD"],
             ibmc_user=os.environ.get("IBMC_USER", os.environ["HMM_USER"]),

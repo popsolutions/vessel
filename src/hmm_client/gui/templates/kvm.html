@@ -7,15 +7,44 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background: #000; color: #e2e8f0;
-           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin:0; }
-    #frame { display: block; margin: 0 auto; image-rendering: pixelated;
-             max-width: 100vw; max-height: calc(100vh - 48px); }
+           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin:0;
+           height: 100vh; display: flex; flex-direction: column; }
     #status { background: #0b1220; border-bottom: 1px solid #1f2937;
-              padding: 8px 16px; display: flex; gap: 16px; align-items: center;
-              font-size: 12px; }
-    #status .ok { color: #10b981; }
+              padding: 8px 16px; display: flex; gap: 14px; align-items: center;
+              font-size: 12px; flex-wrap: wrap; flex-shrink: 0; }
+    #status .ok  { color: #10b981; }
     #status .err { color: #f43f5e; }
     #status .dim { color: #64748b; }
+    #main { flex: 1; display: flex; min-height: 0; }
+    #screen { flex: 1; display: flex; align-items: center; justify-content: center;
+              padding: 12px; min-width: 0; min-height: 0; background: #000; }
+    #frame  { image-rendering: pixelated; max-width: 100%; max-height: 100%;
+              border: 1px solid #1f2937; }
+    #side   { width: 280px; background: #0b1220; border-left: 1px solid #1f2937;
+              padding: 12px 14px; overflow-y: auto; font-size: 12px; flex-shrink: 0; }
+    #side h3 { color: #10b981; font-weight: bold; margin: 12px 0 6px;
+               font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    #side h3:first-child { margin-top: 0; }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .btn { padding: 6px 8px; border-radius: 4px; font-size: 12px;
+           cursor: pointer; border: none; color: #e2e8f0; }
+    .btn:hover { filter: brightness(1.15); }
+    .btn-on    { background: #047857; }
+    .btn-off   { background: #b91c1c; }
+    .btn-warn  { background: #b45309; }
+    .btn-neutr { background: #334155; }
+    .btn[disabled] { opacity: .4; cursor: not-allowed; }
+    input[type=text], input[type=number] {
+        background: #0f172a; border: 1px solid #1f2937;
+        padding: 4px 6px; border-radius: 4px; width: 100%; font-size: 12px;
+        color: #e2e8f0; }
+    label.field { display: block; margin: 6px 0; }
+    label.check { display: flex; gap: 6px; align-items: center;
+                  color: #94a3b8; font-size: 11px; margin: 4px 0; }
+    pre.out { background: #020617; border: 1px solid #1f2937;
+              padding: 6px; border-radius: 4px; font-size: 11px;
+              white-space: pre-wrap; max-height: 100px; overflow-y: auto;
+              color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -31,7 +60,61 @@
   <span class="dim flex-1 text-right" id="msg"></span>
 </div>
 
-<canvas id="frame" width="800" height="600"></canvas>
+<div id="main">
+
+  <div id="screen">
+    <canvas id="frame" width="800" height="600"></canvas>
+  </div>
+
+  <aside id="side">
+    <h3>Power</h3>
+    <div class="btn-row">
+      <button class="btn btn-on"    onclick="powerAct('on')">Power On</button>
+      <button class="btn btn-off"   onclick="powerAct('off')">Force Off</button>
+      <button class="btn btn-warn"  onclick="powerAct('cycle')">Cycle</button>
+      <button class="btn btn-warn"  onclick="powerAct('reset')">Reset</button>
+      <button class="btn btn-neutr" onclick="powerAct('nmi')">NMI</button>
+    </div>
+    <pre id="power-out" class="out"></pre>
+
+    <h3>Boot device</h3>
+    <div class="btn-row">
+      <button class="btn btn-neutr" onclick="bootDev('hdd')">HDD</button>
+      <button class="btn btn-neutr" onclick="bootDev('cd')">CD</button>
+      <button class="btn btn-neutr" onclick="bootDev('pxe')">PXE</button>
+      <button class="btn btn-neutr" onclick="bootDev('none')">none</button>
+    </div>
+    <pre id="boot-out" class="out"></pre>
+
+    <h3>Mount ISO</h3>
+    <form id="iso-form" onsubmit="mountIso(event)">
+      <label class="field">
+        <span class="dim">.iso path</span>
+        <input type="text" name="iso_path" required
+               placeholder="/path/to/file.iso">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="hard_reset" value="true">
+        auto hard-reset iBMC if CN_EXIST persists (~30s)
+      </label>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-on">Mount</button>
+        <button type="button" class="btn btn-off"
+                onclick="releaseVmedia(false)">Eject</button>
+      </div>
+    </form>
+    <pre id="iso-out" class="out"></pre>
+
+    <h3>Recovery</h3>
+    <button class="btn btn-warn w-full"
+            onclick="releaseVmedia(true)" style="width:100%">
+      Hard release vmedia (iBMC reset, ~30s)
+    </button>
+  </aside>
+
+</div>
+
+<canvas id="dummy" style="display:none"></canvas>
 
 <script>
   const slot = {{ slot }};
@@ -42,7 +125,11 @@
   const $fid  = document.getElementById('frame-id');
   const $fsz  = document.getElementById('frame-size');
   const $fps  = document.getElementById('fps');
+  const $pout = document.getElementById('power-out');
+  const $bout = document.getElementById('boot-out');
+  const $iout = document.getElementById('iso-out');
 
+  // --- WebSocket video ----------------------------------------------------
   let pendingMeta = null;
   let frameWindow = [];
 
@@ -50,32 +137,17 @@
                 + location.host + `/api/blade/${slot}/kvm/ws`;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
-
-  ws.onopen = () => {
-    $conn.textContent = 'open';
-    $conn.className = 'ok';
-  };
-  ws.onclose = () => {
-    $conn.textContent = 'closed';
-    $conn.className = 'err';
-  };
-  ws.onerror = () => {
-    $conn.textContent = 'error';
-    $conn.className = 'err';
-  };
-
+  ws.onopen  = () => { $conn.textContent = 'open';   $conn.className = 'ok'; };
+  ws.onclose = () => { $conn.textContent = 'closed'; $conn.className = 'err'; };
+  ws.onerror = () => { $conn.textContent = 'error';  $conn.className = 'err'; };
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
-      if (m.type === 'frame') {
-        pendingMeta = m;
-      } else if (m.type === 'error') {
-        $msg.textContent = m.message;
-        $msg.className = 'flex-1 text-right err';
-      } else if (m.type === 'info') {
-        $msg.textContent = m.message;
-        $msg.className = 'flex-1 text-right dim';
-      }
+      if (m.type === 'frame') pendingMeta = m;
+      else if (m.type === 'error') { $msg.textContent = m.message;
+                                     $msg.className = 'flex-1 text-right err'; }
+      else if (m.type === 'info')  { $msg.textContent = m.message;
+                                     $msg.className = 'flex-1 text-right dim'; }
       return;
     }
     const blob = new Blob([ev.data], {type: 'image/png'});
@@ -97,6 +169,43 @@
     };
     img.src = url;
   };
+
+  // --- Power / boot / vmedia ---------------------------------------------
+  async function powerAct(act) {
+    if (act !== 'on' && !confirm(`Apply power action "${act}" on slot ${slot}?`))
+      return;
+    $pout.textContent = `running power ${act}…`;
+    const r = await fetch(`/api/blade/${slot}/power/${act}`, {method: 'POST'});
+    const j = await r.json();
+    $pout.textContent = j.output || JSON.stringify(j, null, 2);
+  }
+  async function bootDev(dev) {
+    if (!confirm(`Set one-shot boot=${dev} on slot ${slot}?`)) return;
+    $bout.textContent = `setting boot ${dev}…`;
+    const r = await fetch(`/api/blade/${slot}/boot/${dev}`, {method: 'POST'});
+    const j = await r.json();
+    $bout.textContent = j.set_output || JSON.stringify(j, null, 2);
+  }
+  async function mountIso(ev) {
+    ev.preventDefault();
+    const fd = new FormData(document.getElementById('iso-form'));
+    fd.set('slot', slot);
+    $iout.textContent = `submitting…`;
+    const r = await fetch('/api/vmedia/mount', {method: 'POST', body: fd});
+    const j = await r.json();
+    $iout.textContent = `task ${j.task_id} started — see Background tasks on / `;
+  }
+  async function releaseVmedia(hard) {
+    const msg = hard
+      ? `Hard release on slot ${slot}? This RESETS the iBMC IPMC (~30s).`
+      : `Soft release vmedia on slot ${slot}?`;
+    if (!confirm(msg)) return;
+    $iout.textContent = `releasing${hard ? ' (hard)' : ''}…`;
+    const url = `/api/vmedia/${slot}/release` + (hard ? '?hard=true' : '');
+    const r = await fetch(url, {method: 'POST'});
+    const j = await r.json();
+    $iout.textContent = JSON.stringify(j);
+  }
 </script>
 
 </body>

@@ -33,26 +33,54 @@ _tasks: dict[str, dict[str, Any]] = {}
 _tasks_lock = threading.Lock()
 
 
-def _settings() -> Settings:
-    return Settings.load()
+_HOST_COOKIE = "hmm_host"
+
+
+def _settings(request: Request | None = None) -> Settings:
+    """Build a Settings, honouring a chassis-host cookie when present."""
+    host = None
+    if request is not None:
+        host = request.cookies.get(_HOST_COOKIE)
+    return Settings.load(host_override=host)
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    s = _settings()
-    blades, switches = ops.list_inventory(s)
+    s = _settings(request)
+    blades: list[dict[str, Any]] = []
+    switches: list[dict[str, Any]] = []
+    err: str | None = None
+    try:
+        blades, switches = ops.list_inventory(s)
+    except Exception as e:  # connection refused, TLS error, wrong host, etc.
+        err = f"could not reach chassis at {s.hmm_host}: {e!s}"
     return templates.TemplateResponse(request, "index.html", {
         "blades": blades,
         "switches": switches,
         "host": s.hmm_host,
+        "default_host": Settings.load().hmm_host,
         "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "tasks": list(_tasks.values()),
+        "inventory_error": err,
     })
+
+
+@app.post("/api/host")
+def set_host(request: Request, host: str = Form("")) -> JSONResponse:
+    """Persist the active chassis host as a cookie. Empty resets to .env."""
+    response = JSONResponse({"ok": True,
+                             "host": host.strip() or Settings.load().hmm_host})
+    if host.strip():
+        response.set_cookie(_HOST_COOKIE, host.strip(),
+                            max_age=60 * 60 * 24 * 365, samesite="lax")
+    else:
+        response.delete_cookie(_HOST_COOKIE)
+    return response
 
 
 @app.get("/api/inventory", response_class=HTMLResponse)
 def fragment_inventory(request: Request) -> HTMLResponse:
-    s = _settings()
+    s = _settings(request)
     blades, switches = ops.list_inventory(s)
     return templates.TemplateResponse(request, "_grid.html", {
         "blades": blades, "switches": switches,
@@ -60,24 +88,24 @@ def fragment_inventory(request: Request) -> HTMLResponse:
 
 
 @app.get("/api/blade/{slot}/bootdev", response_class=HTMLResponse)
-def fragment_bootdev(slot: int) -> HTMLResponse:
-    out = ops.get_boot_device(_settings(), slot)
+def fragment_bootdev(request: Request, slot: int) -> HTMLResponse:
+    out = ops.get_boot_device(_settings(request), slot)
     return HTMLResponse(f"<code class='text-xs text-emerald-300'>{out.strip()}</code>")
 
 
 @app.post("/api/blade/{slot}/power/{action}")
-def power(slot: int, action: str) -> JSONResponse:
+def power(request: Request, slot: int, action: str) -> JSONResponse:
     if action not in ops.POWER_VALUES and action not in ops.RESET_VALUES:
         raise HTTPException(400, f"unknown action {action!r}")
-    out = ops.power(_settings(), slot, action)
+    out = ops.power(_settings(request), slot, action)
     return JSONResponse({"ok": True, "slot": slot, "action": action, "output": out})
 
 
 @app.post("/api/blade/{slot}/boot/{device}")
-def boot(slot: int, device: str, reboot: bool = False) -> JSONResponse:
+def boot(request: Request, slot: int, device: str, reboot: bool = False) -> JSONResponse:
     if device not in ops.BOOT_DEVICES:
         raise HTTPException(400, f"unknown device {device!r}")
-    s = _settings()
+    s = _settings(request)
     out = ops.set_boot_device(s, slot, device)
     cycled = ""
     if reboot:
@@ -89,10 +117,12 @@ def boot(slot: int, device: str, reboot: bool = False) -> JSONResponse:
 
 
 @app.post("/api/snapshot")
-def snapshot_start() -> JSONResponse:
+def snapshot_start(request: Request) -> JSONResponse:
     task_id = f"snap-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+    s = _settings(request)
     with _tasks_lock:
-        _tasks[task_id] = {"id": task_id, "kind": "snapshot", "state": "running"}
+        _tasks[task_id] = {"id": task_id, "kind": "snapshot",
+                           "host": s.hmm_host, "state": "running"}
 
     def _run() -> None:
         try:
@@ -111,6 +141,7 @@ def snapshot_start() -> JSONResponse:
 
 @app.post("/api/vmedia/mount")
 def vmedia_mount(
+    request: Request,
     slot: int = Form(...),
     iso_path: str = Form(...),
     hard_reset: bool = Form(False),
@@ -119,6 +150,7 @@ def vmedia_mount(
 
     task_id = f"vm-{slot}-{datetime.now(timezone.utc).strftime('%H%M%S')}"
     cancel_event = threading.Event()
+    s = _settings(request)
     with _tasks_lock:
         _tasks[task_id] = {
             "id": task_id, "kind": "vmedia", "slot": slot, "iso": iso_path,
@@ -127,7 +159,7 @@ def vmedia_mount(
 
     def _run() -> None:
         try:
-            mount_iso(_settings(), slot=slot, iso_path=iso_path,
+            mount_iso(s, slot=slot, iso_path=iso_path,
                       auto_hard_reset=hard_reset,
                       on_idle=cancel_event.is_set)
             with _tasks_lock:
@@ -142,9 +174,10 @@ def vmedia_mount(
 
 
 @app.post("/api/blade/{slot}/sol/start")
-def sol_start(slot: int, refresh: bool = True) -> JSONResponse:
+def sol_start(request: Request, slot: int, refresh: bool = True) -> JSONResponse:
     """Capture the iBMC's SOL buffer in a background task. Slow (~60-180s)."""
     task_id = f"sol-{slot}-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+    s = _settings(request)
     with _tasks_lock:
         _tasks[task_id] = {
             "id": task_id, "kind": "sol", "slot": slot, "state": "running",
@@ -152,7 +185,7 @@ def sol_start(slot: int, refresh: bool = True) -> JSONResponse:
 
     def _run() -> None:
         try:
-            text = ops.fetch_sol(_settings(), slot, refresh=refresh)
+            text = ops.fetch_sol(s, slot, refresh=refresh)
             with _tasks_lock:
                 _tasks[task_id]["state"] = "done"
                 _tasks[task_id]["sol_text"] = text
@@ -217,7 +250,7 @@ def kvm_start(slot: int) -> JSONResponse:
 def kvm_canvas(request: Request, slot: int) -> HTMLResponse:
     """Full-screen KVM canvas — connects to /api/blade/{slot}/kvm/ws."""
     return templates.TemplateResponse(request, "kvm.html", {
-        "slot": slot, "host": _settings().hmm_host,
+        "slot": slot, "host": _settings(request).hmm_host,
     })
 
 
@@ -271,9 +304,9 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
 
 
 @app.post("/api/vmedia/{slot}/release")
-def vmedia_release(slot: int, hard: bool = False) -> JSONResponse:
+def vmedia_release(request: Request, slot: int, hard: bool = False) -> JSONResponse:
     from ..vmedia.client import force_release_vmedia
-    force_release_vmedia(_settings(), slot, hard_reset=hard)
+    force_release_vmedia(_settings(request), slot, hard_reset=hard)
     return JSONResponse({"ok": True, "slot": slot})
 
 
