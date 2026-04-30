@@ -24,8 +24,21 @@ import contextlib
 import socket
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
-from .login import Session
+from rich.console import Console
+
+from ..config import Settings
+from . import sff8020i
+from .cdrom_iso import IsoFileBacking
+from .kvm_stream import (
+    _byte_swap_4byte_chunks,
+    derive_vmedia_session_keys,
+    pack_req_vmm_codekey,
+    parse_vmm_codekey_report,
+)
+from .login import Session, login
 from .proto import (
     FRAME_HEAD_SIZE,
     AckCode,
@@ -35,6 +48,8 @@ from .proto import (
     pack_header,
     parse_header,
 )
+
+console = Console()
 
 DEFAULT_VERSION = (3, 1, 1, 1)  # matches Palemoon's captured CERTIFY_ID byte-for-byte
 CONNECT_TIMEOUT = 20.0
@@ -220,3 +235,220 @@ def open_vmedia(sess: Session, slot: int,
         )
 
     return Connection(sess=sess, slot=slot, sock=s)
+
+
+# ---------------------------------------------------------------------------
+# Per-blade KVM stream — codekey negotiation
+# ---------------------------------------------------------------------------
+
+PER_BLADE_KVM_PORT = 2200  # for blade 1 per BLADE_STATE; if other blades differ,
+                           # we'll need to query BLADE_STATE per-slot (issue #25 fix)
+
+
+def negotiate_codekey(sess: Session, slot: int,
+                      kvm_port: int = PER_BLADE_KVM_PORT) -> dict[str, bytes]:
+    """Phase 1: open per-blade KVM stream, send REQ_VMM_CODEKEY, derive VM keys.
+
+    Returns the dict from `derive_vmedia_session_keys`:
+      {sessionid (24B), secret_key (16B), secret_iv (16B)}
+    """
+    sid4 = _byte_swap_4byte_chunks(sess.verifyvalue.to_bytes(4, "big"))
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(CONNECT_TIMEOUT)
+    try:
+        s.connect((sess.host, kvm_port))
+        s.sendall(pack_req_vmm_codekey(blade_no=slot, sessionid=sid4, secure=False))
+        time.sleep(0.5)
+        s.settimeout(RECV_TIMEOUT)
+        raw = b""
+        try:
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                raw += chunk
+                if len(raw) >= 256:
+                    break
+        except socket.timeout:
+            pass
+    finally:
+        with contextlib.suppress(Exception):
+            s.shutdown(socket.SHUT_RDWR)
+        s.close()
+
+    if len(raw) < 7 or raw[:2] != b"\xfe\xf6":
+        raise RuntimeError(f"REQ_VMM_CODEKEY: no valid response ({len(raw)} bytes)")
+    blen = (raw[2] << 8) | raw[3]
+    body = raw[4:4 + blen]
+    op = body[2]
+    if op != 0x32:
+        raise RuntimeError(f"expected VMM_CODEENCRYPT_REPORT (op=0x32), got 0x{op:02x}")
+    nego_codekey, nego_salt = parse_vmm_codekey_report(body[3:])
+    return derive_vmedia_session_keys(nego_codekey, nego_salt)
+
+
+# ---------------------------------------------------------------------------
+# SCSI loop — handle iBMC's SFF_DATA commands
+# ---------------------------------------------------------------------------
+
+SFF_FLAGS_END_DATA = 0x31     # response: END (3) + DATA (1)
+SFF_STATUS_OK = 0
+SFF_STATUS_FAIL = 1
+
+
+def _send_sff_data(conn: Connection, body: bytes, seq_id: int) -> None:
+    """Send an SFF_DATA response frame (body length encoded in trans field BE32)."""
+    trans = len(body).to_bytes(4, "big") + b"\x00" * 4
+    head = pack_header(OpCode.SFF_DATA, flags=SFF_FLAGS_END_DATA,
+                       seq_id=seq_id, trans_field=trans)
+    conn.send_frame(head + body)
+
+
+def _send_sff_complete(conn: Connection, seq_id: int, status: int = SFF_STATUS_OK) -> None:
+    """Send the SFF_COMMAND_COMPLETE frame (op 0xFF) closing a CDB transaction."""
+    conn.send_frame(pack_header(OpCode.SFF_COMMAND_COMPLETE,
+                                ack_or_sub=status, seq_id=seq_id))
+
+
+def run_session(conn: Connection, backing: sff8020i.IsoBacking,
+                on_idle: Callable[[], bool] | None = None) -> None:
+    """SCSI loop: read CDBs, build responses, until server closes or `on_idle` says stop.
+
+    `on_idle()` is called when no frame arrives within RECV_TIMEOUT; return True to stop.
+    """
+    cdrom_block = sff8020i.CDROM_BLOCK_SIZE
+    console.print(f"[bold green]vmedia session live[/] — backing {backing.lba_count} LBAs "
+                  f"({backing.lba_count * cdrom_block / 1024 / 1024:.1f} MiB)")
+
+    while True:
+        try:
+            hdr, body = conn.recv_frame(timeout=RECV_TIMEOUT)
+        except (socket.timeout, TimeoutError):
+            if on_idle and on_idle():
+                break
+            with contextlib.suppress(Exception):
+                conn.heartbeat()
+            continue
+        except (ConnectionError, OSError) as e:
+            console.print(f"[red]connection: {e}[/]")
+            break
+
+        if hdr.op in (OpCode.SHUTDOWN, OpCode.CLOSE_VM):
+            console.print(f"[yellow]server requested {OpCode(hdr.op).name}[/]")
+            break
+
+        if hdr.op == OpCode.HEARTBIT:
+            conn.heartbeat()
+            continue
+
+        if hdr.op == OpCode.ACK:
+            continue  # mid-transaction acks; ignore for now
+
+        if hdr.op != OpCode.SFF_DATA:
+            console.print(f"[yellow]unexpected op 0x{hdr.op:02x} ({len(body)} B body)[/]")
+            continue
+
+        # SFF_DATA from server: flags lower-nibble 0 = COMMAND (CDB)
+        if (hdr.flags & 0x0F) != 0:
+            continue  # data continuation we don't expect
+
+        cdb = body
+        scsi_op, fields = sff8020i.parse_cdb(cdb)
+        seq = hdr.seq_id
+
+        try:
+            resp: bytes = b""
+            if scsi_op == sff8020i.INQUIRY:
+                resp = sff8020i.make_inquiry_response(alloc_len=fields.get("alloc_len", 36) or 36)
+            elif scsi_op == sff8020i.READ_CAPACITY:
+                resp = sff8020i.make_read_capacity_response(backing.lba_count)
+            elif scsi_op == sff8020i.READ_10:
+                resp = sff8020i.make_read_response(
+                    backing, fields["lba"], fields["transfer_len"]
+                )
+            elif scsi_op == sff8020i.READ_TOC:
+                resp = sff8020i.make_read_toc_response(
+                    backing.lba_count,
+                    msf=bool(fields.get("msf", 0)),
+                    format_=fields.get("format", 0),
+                )
+            elif scsi_op in (sff8020i.MODE_SENSE_6, sff8020i.MODE_SENSE_10):
+                resp = sff8020i.make_mode_sense_response(
+                    fields.get("page_code", 0), fields.get("alloc_len", 8)
+                )
+            elif scsi_op in (
+                sff8020i.TEST_UNIT_READY,
+                sff8020i.PREVENT_ALLOW_MEDIUM_REMOVAL,
+                sff8020i.START_STOP_UNIT,
+            ):
+                resp = b""
+            else:
+                console.print(f"[yellow]unsupported SCSI op {sff8020i.opcode_name(scsi_op)} "
+                              f"(seq={seq}) — replying COMMAND_COMPLETE FAIL[/]")
+                _send_sff_complete(conn, seq, status=SFF_STATUS_FAIL)
+                continue
+
+            console.print(f"  scsi: {sff8020i.opcode_name(scsi_op):<24s} "
+                          f"seq={seq:>3}  resp={len(resp)}B  fields={fields}")
+
+            if resp:
+                _send_sff_data(conn, resp, seq)
+            _send_sff_complete(conn, seq, status=SFF_STATUS_OK)
+
+        except Exception as e:
+            console.print(f"[red]error handling {sff8020i.opcode_name(scsi_op)}: {e}[/]")
+            _send_sff_complete(conn, seq, status=SFF_STATUS_FAIL)
+
+
+# ---------------------------------------------------------------------------
+# Top-level entry: mount an ISO end-to-end
+# ---------------------------------------------------------------------------
+
+def mount_iso(settings: Settings, slot: int, iso_path: str | Path,
+              kvm_port: int = PER_BLADE_KVM_PORT,
+              on_idle: Callable[[], bool] | None = None) -> None:
+    """Full vmedia mount flow.
+
+    1. HMM Web login + extract per-session keys
+    2. KVM stream (port 2200 default for blade 1) -> REQ_VMM_CODEKEY -> derive
+    3. VM data plane (port 8500 + slot) -> CERTIFY_ID -> DEVICE_TYPE=CDROM
+    4. SCSI loop responding to iBMC's INQUIRY/READ/etc with bytes from the .iso
+
+    Blocks until the server tears down or `on_idle()` returns True.
+    """
+    console.rule(f"[bold]vmedia mount[/] slot={slot} iso={iso_path}")
+
+    sess = login(settings.hmm_host, settings.hmm_user, settings.hmm_password,
+                 verify_tls=settings.verify_tls)
+    console.print(f"  HMM login ok  verifyvalue=0x{sess.verifyvalue:08x}")
+
+    keys = negotiate_codekey(sess, slot, kvm_port=kvm_port)
+    console.print(f"  codekey nego ok  sessionID derived")
+
+    vm_port = sess.vmedia_port(slot)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(CONNECT_TIMEOUT)
+    s.connect((sess.host, vm_port))
+    local_ip = socket.inet_aton(s.getsockname()[0])
+
+    s.sendall(_pack_certify_id(sessionid=keys["sessionid"], local_ip=local_ip))
+    head = parse_header(_recv_exact(s, FRAME_HEAD_SIZE, timeout=RECV_TIMEOUT))
+    if head.op != OpCode.ACK or head.ack_or_sub != AckCode.CERTIFY_PASS:
+        s.close()
+        raise RuntimeError(f"CERTIFY_ID rejected: op={head.op} sub={head.ack_or_sub}")
+    console.print("  CERTIFY_PASS ✓")
+
+    s.sendall(_pack_device_type(DeviceType.CDROM))
+    head = parse_header(_recv_exact(s, FRAME_HEAD_SIZE, timeout=RECV_TIMEOUT))
+    if head.op != OpCode.ACK or head.ack_or_sub != AckCode.DEVICE_CREAT:
+        s.close()
+        raise RuntimeError(f"DEVICE_TYPE rejected: op={head.op} sub={head.ack_or_sub}")
+    console.print("  DEVICE_CREAT ✓")
+
+    conn = Connection(sess=sess, slot=slot, sock=s)
+    try:
+        with IsoFileBacking(iso_path) as backing:
+            run_session(conn, backing, on_idle=on_idle)
+    finally:
+        conn.close(DeviceType.CDROM)
+        console.print("[dim]vmedia session closed[/]")

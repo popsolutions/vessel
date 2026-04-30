@@ -123,6 +123,31 @@ def drift(snapshot_dir: str = typer.Argument(..., help="path to a snapshot dir")
     raise typer.Exit(detect_drift(Path(snapshot_dir)))
 
 
+vmedia_app = typer.Typer(help="VirtualMedia (mount ISO on a blade)")
+app.add_typer(vmedia_app, name="vmedia")
+
+
+@vmedia_app.command("mount")
+def vmedia_mount(
+    slot: int = typer.Option(..., "--slot", help="blade slot 1..32"),
+    iso: str = typer.Option(..., "--iso", help="path to .iso file to expose as virtual CDROM"),
+    kvm_port: int = typer.Option(2200, "--kvm-port",
+                                 help="per-blade KVM stream port for codekey nego (default 2200, blade1)"),
+) -> None:
+    """Mount an ISO on a blade as a virtual CDROM.
+
+    Stays in foreground running the SCSI loop until Ctrl-C or server tears
+    down. Combine with `hmm boot <slot> cd --reboot` in another terminal to
+    boot the blade from the mounted ISO.
+    """
+    from .vmedia.client import mount_iso
+    s = Settings.load()
+    try:
+        mount_iso(s, slot=slot, iso_path=iso, kvm_port=kvm_port)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Ctrl-C — closing session[/]")
+
+
 sessions_app = typer.Typer(help="Manage Redfish sessions on the HMM")
 app.add_typer(sessions_app, name="sessions")
 
