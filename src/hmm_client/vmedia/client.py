@@ -404,23 +404,31 @@ def run_session(conn: Connection, backing: sff8020i.IsoBacking,
 # Top-level entry: mount an ISO end-to-end
 # ---------------------------------------------------------------------------
 
-def force_release_vmedia(settings: Settings, slot: int) -> None:
-    """Try to break a stuck vmedia session for a blade (CN_EXIST recovery).
+def force_release_vmedia(settings: Settings, slot: int,
+                         hard_reset: bool = False) -> None:
+    """Break a stuck vmedia session (CN_EXIST recovery).
 
-    Strategy: open a socket to the VM data plane port and send CLOSE_VM
-    + SHUTDOWN frames un-authenticated. Some iBMC firmwares accept these
-    even without prior CERTIFY and use them to hint that the previous
-    session should be torn down.
+    Soft path (default): un-authenticated CLOSE_VM + SHUTDOWN frames on the
+    VM data plane. Most iBMC firmwares ignore these for security, so this
+    rarely works but is harmless to try.
+
+    Hard path (`hard_reset=True`): SSH-jump into the iBMC and run
+    `ipmcset -d reset` which reboots the IPMC controller (NOT the host).
+    Takes ~30s for the iBMC to come back online, all vmedia state is wiped.
+    The blade's CPU/RAM/disk are NOT touched — running OS keeps running.
     """
+    from ..ops import IBMCSession
     from .login import login as _login
+
     sess = _login(settings.hmm_host, settings.hmm_user, settings.hmm_password,
                   verify_tls=settings.verify_tls)
     port = sess.vmedia_port(slot)
+
+    # Soft attempt
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(5.0)
     try:
         s.connect((sess.host, port))
-        # Best effort — send each device-type close + final shutdown
         for device in (DeviceType.CDROM, DeviceType.FLOPPY):
             with contextlib.suppress(Exception):
                 s.sendall(pack_header(OpCode.CLOSE_VM, flags=int(device) & 0x03))
@@ -432,13 +440,38 @@ def force_release_vmedia(settings: Settings, slot: int) -> None:
         with contextlib.suppress(Exception):
             s.shutdown(socket.SHUT_RDWR)
         s.close()
-    console.print(f"[dim]release attempt sent to slot {slot} on port {port}[/]")
+    console.print(f"[dim]soft release sent to slot {slot} on port {port}[/]")
+
+    if hard_reset:
+        console.print(f"[yellow]hard reset: rebooting iBMC slot {slot} "
+                      "(IPMC only, host CPU/disk untouched, ~30s)...[/]")
+        with IBMCSession(settings, slot) as ibmc:
+            # ipmcset -d reset reboots the IPMC; the SSH session WILL drop.
+            with contextlib.suppress(Exception):
+                ibmc.run("ipmcset -d reset", wait=2.0)
+                # confirm prompt may appear
+                ibmc.run("Y", wait=1.0)
+        # Wait for iBMC to come back
+        deadline = time.time() + 90.0
+        while time.time() < deadline:
+            time.sleep(2.0)
+            try:
+                test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test.settimeout(2.0)
+                test.connect((sess.host, port))
+                test.close()
+                console.print("[green]iBMC back online[/]")
+                return
+            except Exception:
+                pass
+        console.print("[yellow]warning: iBMC didn't come back within 90s[/]")
 
 
 def mount_iso(settings: Settings, slot: int, iso_path: str | Path,
               kvm_port: int = PER_BLADE_KVM_PORT,
               on_idle: Callable[[], bool] | None = None,
-              auto_release: bool = True) -> None:
+              auto_release: bool = True,
+              auto_hard_reset: bool = False) -> None:
     """Full vmedia mount flow.
 
     1. HMM Web login + extract per-session keys
@@ -471,17 +504,25 @@ def mount_iso(settings: Settings, slot: int, iso_path: str | Path,
     s, head = _connect_and_certify()
     if head.op == OpCode.ACK and head.ack_or_sub == AckCode.CN_EXIST and auto_release:
         s.close()
-        console.print("[yellow]CN_EXIST: stale vmedia session detected; auto-releasing...[/]")
-        force_release_vmedia(settings, slot)
+        console.print("[yellow]CN_EXIST: stale vmedia session; soft-releasing...[/]")
+        force_release_vmedia(settings, slot, hard_reset=False)
         time.sleep(2.0)
+        s, head = _connect_and_certify()
+    if (head.op == OpCode.ACK and head.ack_or_sub == AckCode.CN_EXIST
+            and auto_hard_reset):
+        s.close()
+        console.print("[yellow]CN_EXIST persists; hard-resetting iBMC...[/]")
+        force_release_vmedia(settings, slot, hard_reset=True)
+        # After iBMC reset, our derived keys are stale — re-do the nego
+        keys = negotiate_codekey(sess, slot, kvm_port=kvm_port)
         s, head = _connect_and_certify()
     if head.op != OpCode.ACK or head.ack_or_sub != AckCode.CERTIFY_PASS:
         s.close()
         if head.ack_or_sub == AckCode.CN_EXIST:
             raise RuntimeError(
                 f"vmedia: blade {slot} session still locked (CN_EXIST). "
-                f"iBMC may need a manual reset (`ipmcset -d reset` from inside) "
-                f"or wait for its session timeout."
+                f"Try `hmm vmedia mount ... --hard-reset` to reboot the iBMC "
+                f"(IPMC only, host stays running, ~30s downtime for the iBMC)."
             )
         raise RuntimeError(f"CERTIFY_ID rejected: op={head.op} sub={head.ack_or_sub}")
     console.print("  CERTIFY_PASS ✓")
