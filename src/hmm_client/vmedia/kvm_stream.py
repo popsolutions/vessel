@@ -86,18 +86,11 @@ def per_int_to_byte_con(value_int: int) -> bytes:
 
 
 def _huawei_crc_field(crc16: int) -> bytes:
-    """Encode CRC the Huawei-Java way: only the sign-extension byte appears.
-
-    Java's intToByte writes a 4-byte int into a byte[4]. wCrc returns a `short`
-    which auto sign-extends when assigned to int:
-        crc < 0x8000 (positive short): int 0x0000xxxx -> tem = [00, 00, hi, lo]
-        crc >= 0x8000 (negative short): int 0xFFFFxxxx -> tem = [FF, FF, hi, lo]
-    The packet stores `[+4]=tem[1]` and `[+5]=tem[0]` -- both are the sign byte.
-    Receiver checks `tem[0]==bytes[+5] && tem[1]==bytes[+4]`, so the wire CRC
-    field carries only the SIGN BIT of the CRC; both bytes are equal.
+    """Encode CRC as 16-bit BIG-ENDIAN (high byte first), confirmed empirically
+    from a captured Palemoon session. Earlier "sign-only" theory from the
+    decompiled source was a jadx artifact — actual wire format is plain BE.
     """
-    sign_byte = 0xFF if (crc16 & 0x8000) else 0x00
-    return bytes([sign_byte, sign_byte])
+    return struct.pack(">H", crc16 & 0xFFFF)
 
 
 def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
