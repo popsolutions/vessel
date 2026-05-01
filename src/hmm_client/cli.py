@@ -298,5 +298,31 @@ def sessions_clean(yes: bool = typer.Option(False, "--yes", "-y")) -> None:
     console.print(f"[green]deleted {n} orphan session(s)[/]")
 
 
+@app.command("notify")
+def notify_cmd(
+    message: str = typer.Argument(..., help="Text to send"),
+    level: str = typer.Option("info", "--level", "-l",
+                              help="info|ok|warn|error (changes emoji prefix)"),
+) -> None:
+    """Send a Telegram notification (smoke-test the notify wiring).
+
+    Reads VESSEL_TG_BOT_TOKEN + VESSEL_TG_CHAT_ID from env. Exits 2
+    if either is unset so scripts can detect the missing config.
+    """
+    from .notify import is_configured, notify_telegram
+    if not is_configured():
+        console.print(
+            "[yellow]Telegram not configured: set "
+            "VESSEL_TG_BOT_TOKEN and VESSEL_TG_CHAT_ID in env.[/]"
+        )
+        raise typer.Exit(2)
+    ok = notify_telegram(message, level=level)
+    if ok:
+        console.print("[green]sent[/]")
+    else:
+        console.print("[red]send failed — check logs[/]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
