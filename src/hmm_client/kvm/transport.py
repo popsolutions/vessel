@@ -96,8 +96,20 @@ class Image:
 
 
 def reassemble_images(frames: list[KvmFrame]) -> list[Image]:
-    """Group IMAGE_DATA frames by image-id; return one `Image` per id seen."""
+    """Group IMAGE_DATA frames by image-id; return one `Image` per id seen.
+
+    Header layout in the IMAGE_DATA payload (matches KvmClient.frames;
+    see KVMUtil.setVar for the original Java source of truth):
+
+        p[1..2] BE   chunk position (0 = first chunk)
+        p[3]         frame number (img_id)
+        p[4..7] BE   total compressed size
+        p[8]         top bit = diff flag, low 7 bits = width hi
+        p[9]         width lo
+        p[10..11] BE height
+    """
     images: dict[int, Image] = {}
+    chunks_by_id: dict[int, dict[int, bytes]] = {}
     order: list[int] = []
     for fr in frames:
         if fr.op != KVM_OP_IMAGE_DATA:
@@ -105,24 +117,32 @@ def reassemble_images(frames: list[KvmFrame]) -> list[Image]:
         p = fr.payload
         if len(p) < 4:
             continue
-        chunk_no = p[2]
+        chunk_pos = (p[1] << 8) | p[2]
         img_id = p[3]
-        if chunk_no == 0:
+        if chunk_pos == 0:
             if len(p) < 18:
                 continue
             total = int.from_bytes(p[4:8], "big")
-            w = int.from_bytes(p[8:10], "big")
+            w = ((p[8] & 0x7F) << 8) | p[9]
             h = int.from_bytes(p[10:12], "big")
             images[img_id] = Image(
                 img_id=img_id, total_size=total, width=w, height=h,
                 flags_tail=bytes(p[12:18]),
             )
+            chunks_by_id[img_id] = {}
             order.append(img_id)
         else:
             img = images.get(img_id)
             if img is None:
                 continue
-            img.data.extend(p[4:])
+            # Store by chunk_pos and assemble in order at the end —
+            # see KvmClient.frames for why arrival-order assembly
+            # rotates each chassis row by half its width.
+            chunks_by_id[img_id][chunk_pos] = bytes(p[4:])
+    for img_id in order:
+        img = images[img_id]
+        for cp in sorted(chunks_by_id[img_id]):
+            img.data.extend(chunks_by_id[img_id][cp])
     return [images[i] for i in order]
 
 

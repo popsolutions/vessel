@@ -240,6 +240,12 @@ def bgr233_to_rgb888(framebuffer: bytes) -> bytes:
 
     Replicates top bits into low bits so peak channel values reach 0xFF
     instead of 0xE0 / 0xC0.
+
+    NOTE: ~250 ms per call for a 640×480 buffer (pure-Python loop over
+    every pixel). The hot live-streaming path uses `BGR233_PALETTE` +
+    PIL's "P" mode instead — same colour mapping, but the per-pixel
+    work happens in C. Keep this function for CLI dump/snapshot paths
+    where throughput doesn't matter.
     """
     out = bytearray(len(framebuffer) * 3)
     for i, b in enumerate(framebuffer):
@@ -247,3 +253,12 @@ def bgr233_to_rgb888(framebuffer: bytes) -> bytes:
         out[3 * i + 1] = _G_LUT[b]
         out[3 * i + 2] = _B_LUT[b]
     return bytes(out)
+
+
+# BGR233 → RGB888 LUT in the format `PIL.Image.putpalette()` expects:
+# 256 entries × (R, G, B), concatenated, 768 bytes total. The live KVM
+# pipeline uses this so the per-pixel work stays in libpng instead of a
+# Python loop — ~50× speedup over `bgr233_to_rgb888` for 640×480.
+BGR233_PALETTE: bytes = bytes(
+    c for i in range(256) for c in (_R_LUT[i], _G_LUT[i], _B_LUT[i])
+)

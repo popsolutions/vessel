@@ -9,9 +9,12 @@ Run via `hmm gui` (CLI subcommand) or:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import threading
 import webbrowser
+
+_log = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -416,31 +419,149 @@ def _settings_from_ws(ws: WebSocket) -> Settings:
 
 
 async def _stream_live(ws: WebSocket, s: Settings, slot: int) -> None:
-    """Run the live KVM handshake, push decoded PNGs through the WebSocket.
+    """Run the live KVM handshake, push decoded PNGs out and accept
+    keyboard/mouse input from the browser.
 
-    Frame production is blocking I/O, so we run the generator in a
-    thread and bridge to asyncio via `run_in_executor`.
+    The KvmClient does blocking I/O on its sockets, so we bridge:
+      * frames: pump `iter_pngs(cli)` (a blocking generator) via the
+        default executor → WebSocket.send_bytes
+      * input: read text frames off the WS, validate, dispatch to
+        `cli.send_key_report` / `cli.send_mouse_abs` (also blocking
+        TCP send) via the executor.
+
+    Either side completing or the WS disconnecting tears the other
+    side down via the cli.close().
     """
-    from ..kvm.client import live_pngs
+    from ..kvm.client import iter_pngs, open_live_session
 
     loop = asyncio.get_running_loop()
     await ws.send_json({"type": "info",
                         "message": f"live: connecting host={s.hmm_host} slot={slot}"})
 
-    gen = live_pngs(s.hmm_host, s.hmm_user, s.hmm_password, slot,
-                    verify_tls=s.verify_tls)
-    sentinel = object()
+    cli = await loop.run_in_executor(
+        None, lambda: open_live_session(s.hmm_host, s.hmm_user, s.hmm_password,
+                                        slot, verify_tls=s.verify_tls))
 
-    while True:
-        # pull the next (img_id, png) pair off the (blocking) generator
-        item = await loop.run_in_executor(None, lambda: next(gen, sentinel))
-        if item is sentinel:
-            await ws.send_json({"type": "info", "message": "live stream ended"})
-            return
-        img_id, png = item
-        await ws.send_json({"type": "frame", "img_id": img_id,
-                            "size": len(png), "source": "live"})
-        await ws.send_bytes(png)
+    # Coalescing slot: the decoder thread pumps frames at chassis speed
+    # (~30 fps) and keeps overwriting `latest` with the freshest one.
+    # The WS task only sends what's currently in the slot — if the
+    # browser is slow, intermediate frames are silently dropped instead
+    # of queueing minutes of stale screens behind a slow socket. This
+    # is what keeps us in sync with reality the way the Java applet does.
+    latest: list[tuple[int, bytes] | None] = [None]
+    decoder_done = False
+    new_frame = asyncio.Event()
+
+    def _decoder_thread() -> None:
+        nonlocal decoder_done
+        try:
+            for item in iter_pngs(cli):
+                latest[0] = item
+                loop.call_soon_threadsafe(new_frame.set)
+        finally:
+            decoder_done = True
+            loop.call_soon_threadsafe(new_frame.set)
+
+    async def _frame_pump() -> None:
+        loop.run_in_executor(None, _decoder_thread)
+        while True:
+            await new_frame.wait()
+            new_frame.clear()
+            item = latest[0]
+            latest[0] = None
+            if item is None:
+                if decoder_done:
+                    await ws.send_json({"type": "info",
+                                        "message": "live stream ended"})
+                    return
+                continue
+            img_id, png = item
+            # Pull native dims out of the PNG IHDR for the status bar — no
+            # full PIL decode needed, and PNG dims are at fixed offsets.
+            w = h = 0
+            if len(png) >= 24 and png[:8] == b"\x89PNG\r\n\x1a\n":
+                w = int.from_bytes(png[16:20], "big")
+                h = int.from_bytes(png[20:24], "big")
+            await ws.send_json({"type": "frame", "img_id": img_id,
+                                "size": len(png), "source": "live",
+                                "w": w, "h": h})
+            await ws.send_bytes(png)
+
+    async def _input_pump() -> None:
+        while True:
+            text = await ws.receive_text()
+            try:
+                msg = _parse_input_msg(text)
+            except ValueError as e:
+                await ws.send_json({"type": "info",
+                                    "message": f"bad input msg: {e}"})
+                continue
+            if msg is None:
+                continue
+            kind, args = msg
+            try:
+                if kind == "key":
+                    await loop.run_in_executor(
+                        None, lambda r=args["report"]: cli.send_key_report(r))
+                elif kind == "mouse":
+                    await loop.run_in_executor(
+                        None, lambda a=args: cli.send_mouse_abs(
+                            a["x"], a["y"], a["buttons"], a.get("wheel", 0)))
+            except OSError as e:
+                await ws.send_json({"type": "info",
+                                    "message": f"input send failed: {e}"})
+                return
+
+    frame_task = asyncio.create_task(_frame_pump())
+    input_task = asyncio.create_task(_input_pump())
+    try:
+        done, pending = await asyncio.wait(
+            {frame_task, input_task}, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        for t in done:
+            exc = t.exception()
+            if exc and not isinstance(exc, WebSocketDisconnect):
+                _log.warning("KVM WS slot=%s task ended with %r",
+                             slot, exc, exc_info=exc)
+            else:
+                _log.info("KVM WS slot=%s task ended cleanly (decoder_done=%s)",
+                          slot, decoder_done)
+    finally:
+        await loop.run_in_executor(None, cli.close)
+        _log.info("KVM WS slot=%s session closed", slot)
+
+
+def _parse_input_msg(text: str) -> tuple[str, dict[str, Any]] | None:
+    """Validate one client→server text message off the KVM WebSocket.
+
+    Two shapes:
+      `{type:"key",  report:[m,0,k1,k2,k3,k4,k5,k6]}`  — 8-byte HID report
+      `{type:"mouse", x:0..3000, y:0..3000, buttons:0..7, wheel:-128..127}`
+    """
+    import json
+    msg = json.loads(text)
+    kind = msg.get("type")
+    if kind == "key":
+        report = msg.get("report")
+        if not isinstance(report, list) or len(report) != 8:
+            raise ValueError("key.report must be 8-byte list")
+        if not all(isinstance(b, int) and 0 <= b <= 0xFF for b in report):
+            raise ValueError("key.report bytes out of range")
+        return "key", {"report": bytes(report)}
+    if kind == "mouse":
+        try:
+            x = int(msg["x"]); y = int(msg["y"])
+            buttons = int(msg["buttons"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"mouse missing field: {e}")
+        wheel = int(msg.get("wheel", 0))
+        x = max(0, min(0xFFFF, x))
+        y = max(0, min(0xFFFF, y))
+        wheel = max(-128, min(127, wheel)) & 0xFF
+        return "mouse", {"x": x, "y": y, "buttons": buttons & 0xFF,
+                         "wheel": wheel}
+    return None
 
 
 @app.post("/api/vmedia/{slot}/release")

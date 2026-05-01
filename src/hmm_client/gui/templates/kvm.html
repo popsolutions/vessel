@@ -35,11 +35,22 @@
     #status .dim { color: #64748b; }
     #main { flex: 1; display: flex; min-height: 0; }
     #screen { flex: 1; display: flex; align-items: center; justify-content: center;
-              padding: 12px; min-width: 0; min-height: 0; background: #000; }
-    #frame  { image-rendering: pixelated; max-width: 100%; max-height: 100%;
-              border: 1px solid #1f2937; }
-    #side   { width: 280px; background: #0b1220; border-left: 1px solid #1f2937;
-              padding: 12px 14px; overflow-y: auto; font-size: 12px; flex-shrink: 0; }
+              padding: 0; min-width: 0; min-height: 0; background: #000;
+              position: relative; overflow: hidden; }
+    #frame  { image-rendering: pixelated; outline: none; cursor: crosshair;
+              display: block; max-width: 100%; max-height: 100%;
+              width: auto; height: auto;
+              transform-origin: center; }
+    #frame:focus { box-shadow: inset 0 0 0 2px #047857; }
+    #focus-hint { position: absolute; top: 14px; left: 50%;
+                  transform: translateX(-50%);
+                  background: rgba(0,0,0,.78); color: #fbbf24;
+                  border: 1px solid #b45309; padding: 6px 12px;
+                  border-radius: 4px; font-size: 11px; pointer-events: none;
+                  display: none; z-index: 10; }
+    #focus-hint.show { display: block; }
+    #side   { width: 210px; background: #0b1220; border-left: 1px solid #1f2937;
+              padding: 10px 12px; overflow-y: auto; font-size: 11px; flex-shrink: 0; }
     #side h3 { color: #10b981; font-weight: bold; margin: 12px 0 6px;
                font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
     #side h3:first-child { margin-top: 0; }
@@ -106,6 +117,7 @@
   <span class="dim">conn</span> <span id="conn">connecting…</span>
   <span class="dim">frame</span> <span id="frame-id">-</span>
   <span class="dim">size</span> <span id="frame-size">-</span>
+  <span class="dim">res</span> <span id="frame-res">-</span>
   <span class="dim">fps</span> <span id="fps">-</span>
   <span class="dim flex-1 text-right" id="msg"></span>
 </div>
@@ -113,7 +125,9 @@
 <div id="main">
 
   <div id="screen">
-    <canvas id="frame" width="800" height="600"></canvas>
+    <canvas id="frame" width="800" height="600" tabindex="0"
+            aria-label="KVM screen — click to capture keyboard"></canvas>
+    <div id="focus-hint">click the screen to capture keyboard ⌨</div>
   </div>
 
   <aside id="side">
@@ -126,6 +140,16 @@
       <button class="btn btn-neutr" onclick="powerAct('nmi')">NMI</button>
     </div>
     <pre id="power-out" class="out"></pre>
+
+    <h3>Send key combo</h3>
+    <div class="btn-row">
+      <button class="btn btn-warn"  onclick="sendCombo('cad')">Ctrl+Alt+Del</button>
+      <button class="btn btn-neutr" onclick="sendCombo('cab')">Ctrl+Alt+Bksp</button>
+      <button class="btn btn-neutr" onclick="sendCombo('caf1')">Ctrl+Alt+F1</button>
+      <button class="btn btn-neutr" onclick="sendCombo('caf2')">Ctrl+Alt+F2</button>
+      <button class="btn btn-neutr" onclick="sendCombo('esc')">Esc</button>
+      <button class="btn btn-neutr" onclick="sendCombo('f2')">F2 (BIOS)</button>
+    </div>
 
     <h3>Boot device</h3>
     <div class="btn-row">
@@ -192,6 +216,7 @@
   const $msg  = document.getElementById('msg');
   const $fid  = document.getElementById('frame-id');
   const $fsz  = document.getElementById('frame-size');
+  const $fres = document.getElementById('frame-res');
   const $fps  = document.getElementById('fps');
   const $pout = document.getElementById('power-out');
   const $bout = document.getElementById('boot-out');
@@ -208,6 +233,21 @@
   ws.onopen  = () => { $conn.textContent = 'open';   $conn.className = 'ok'; };
   ws.onclose = () => { $conn.textContent = 'closed'; $conn.className = 'err'; };
   ws.onerror = () => { $conn.textContent = 'error';  $conn.className = 'err'; };
+  // Fit the canvas to the available #screen area while preserving the
+  // chassis's native aspect ratio. Canvas elements don't honour
+  // object-fit, so we set CSS width/height in pixels each time a new
+  // frame's intrinsic size or the viewport changes.
+  function fitCanvas() {
+    const screen = document.getElementById('screen');
+    const sw = screen.clientWidth, sh = screen.clientHeight;
+    const cw = canvas.width || 1, ch = canvas.height || 1;
+    if (sw <= 0 || sh <= 0) return;
+    const scale = Math.min(sw / cw, sh / ch);
+    canvas.style.width  = Math.floor(cw * scale) + 'px';
+    canvas.style.height = Math.floor(ch * scale) + 'px';
+  }
+  window.addEventListener('resize', fitCanvas);
+
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
@@ -222,13 +262,17 @@
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      if (canvas.width !== img.naturalWidth)  canvas.width  = img.naturalWidth;
-      if (canvas.height !== img.naturalHeight) canvas.height = img.naturalHeight;
+      let resized = false;
+      if (canvas.width !== img.naturalWidth)  { canvas.width  = img.naturalWidth;  resized = true; }
+      if (canvas.height !== img.naturalHeight) { canvas.height = img.naturalHeight; resized = true; }
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
+      if (resized) fitCanvas();
       if (pendingMeta) {
         $fid.textContent = '0x' + pendingMeta.img_id.toString(16);
         $fsz.textContent = pendingMeta.size + ' B';
+        if (pendingMeta.w && pendingMeta.h)
+          $fres.textContent = pendingMeta.w + '×' + pendingMeta.h;
       }
       const now = performance.now();
       frameWindow.push(now);
@@ -237,6 +281,152 @@
     };
     img.src = url;
   };
+  // Initial fit before any frame arrives, in case the layout already has a size.
+  setTimeout(fitCanvas, 50);
+
+  // --- Keyboard + mouse capture -----------------------------------------
+  // KeyboardEvent.code → USB HID Usage ID (boot keyboard, page 0x07).
+  const HID_KEY = {
+    KeyA:0x04, KeyB:0x05, KeyC:0x06, KeyD:0x07, KeyE:0x08, KeyF:0x09,
+    KeyG:0x0A, KeyH:0x0B, KeyI:0x0C, KeyJ:0x0D, KeyK:0x0E, KeyL:0x0F,
+    KeyM:0x10, KeyN:0x11, KeyO:0x12, KeyP:0x13, KeyQ:0x14, KeyR:0x15,
+    KeyS:0x16, KeyT:0x17, KeyU:0x18, KeyV:0x19, KeyW:0x1A, KeyX:0x1B,
+    KeyY:0x1C, KeyZ:0x1D,
+    Digit1:0x1E, Digit2:0x1F, Digit3:0x20, Digit4:0x21, Digit5:0x22,
+    Digit6:0x23, Digit7:0x24, Digit8:0x25, Digit9:0x26, Digit0:0x27,
+    Enter:0x28, Escape:0x29, Backspace:0x2A, Tab:0x2B, Space:0x2C,
+    Minus:0x2D, Equal:0x2E, BracketLeft:0x2F, BracketRight:0x30,
+    Backslash:0x31, Semicolon:0x33, Quote:0x34, Backquote:0x35,
+    Comma:0x36, Period:0x37, Slash:0x38, CapsLock:0x39,
+    F1:0x3A, F2:0x3B, F3:0x3C, F4:0x3D, F5:0x3E, F6:0x3F,
+    F7:0x40, F8:0x41, F9:0x42, F10:0x43, F11:0x44, F12:0x45,
+    PrintScreen:0x46, ScrollLock:0x47, Pause:0x48,
+    Insert:0x49, Home:0x4A, PageUp:0x4B,
+    Delete:0x4C, End:0x4D, PageDown:0x4E,
+    ArrowRight:0x4F, ArrowLeft:0x50, ArrowDown:0x51, ArrowUp:0x52,
+    NumLock:0x53,
+    NumpadDivide:0x54, NumpadMultiply:0x55, NumpadSubtract:0x56,
+    NumpadAdd:0x57, NumpadEnter:0x58,
+    Numpad1:0x59, Numpad2:0x5A, Numpad3:0x5B, Numpad4:0x5C, Numpad5:0x5D,
+    Numpad6:0x5E, Numpad7:0x5F, Numpad8:0x60, Numpad9:0x61, Numpad0:0x62,
+    NumpadDecimal:0x63, IntlBackslash:0x64, ContextMenu:0x65,
+  };
+  const HID_MOD = {
+    ControlLeft:0x01, ShiftLeft:0x02, AltLeft:0x04, MetaLeft:0x08,
+    ControlRight:0x10, ShiftRight:0x20, AltRight:0x40, MetaRight:0x80,
+  };
+  const pressed = new Set();   // HID usage codes currently down
+  let modMask = 0;
+
+  function sendKeyReport() {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    // Boot-protocol HID report: [mods, 0, k1..k6]. We pick the first 6
+    // pressed keys; rollover is rare for KVM use.
+    const keys = Array.from(pressed).slice(0, 6);
+    const report = [modMask, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < keys.length; i++) report[2 + i] = keys[i];
+    ws.send(JSON.stringify({type: 'key', report: report}));
+  }
+
+  function clearKeys() {
+    pressed.clear();
+    modMask = 0;
+    sendKeyReport();
+  }
+
+  canvas.addEventListener('keydown', (e) => {
+    e.preventDefault();
+    if (e.code in HID_MOD) { modMask |= HID_MOD[e.code]; sendKeyReport(); return; }
+    const hid = HID_KEY[e.code];
+    if (hid !== undefined && !pressed.has(hid)) {
+      pressed.add(hid);
+      sendKeyReport();
+    }
+  });
+  canvas.addEventListener('keyup', (e) => {
+    e.preventDefault();
+    if (e.code in HID_MOD) { modMask &= ~HID_MOD[e.code]; sendKeyReport(); return; }
+    const hid = HID_KEY[e.code];
+    if (hid !== undefined) {
+      pressed.delete(hid);
+      sendKeyReport();
+    }
+  });
+  // Lose focus → release all keys so a stuck modifier doesn't carry over.
+  canvas.addEventListener('blur', clearKeys);
+  window.addEventListener('blur', clearKeys);
+
+  // --- Mouse: absolute coordinates scaled to the iBMC's 0..3000 range. -
+  let mouseButtons = 0;  // bit0=L, bit1=R, bit2=M (Java mousData[0] layout)
+  function sendMouse(ev, wheel = 0) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    const r = canvas.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const cx = Math.max(0, Math.min(r.width,  ev.clientX - r.left));
+    const cy = Math.max(0, Math.min(r.height, ev.clientY - r.top));
+    const x = Math.round((cx / r.width)  * 3000);
+    const y = Math.round((cy / r.height) * 3000);
+    ws.send(JSON.stringify({type: 'mouse', x: x, y: y,
+                            buttons: mouseButtons, wheel: wheel|0}));
+  }
+  // Browser button mapping → Java mousData[0] mapping:
+  //   browser 0 (left)   = bit0 (1)
+  //   browser 2 (right)  = bit1 (2)   [Java mousePressedPack: button==3 ⇒ |2]
+  //   browser 1 (middle) = bit2 (4)
+  function browserBtnToBit(b) { return b === 0 ? 1 : (b === 1 ? 4 : (b === 2 ? 2 : 0)); }
+
+  canvas.addEventListener('mousemove', (e) => sendMouse(e));
+  canvas.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    canvas.focus();
+    mouseButtons |= browserBtnToBit(e.button);
+    sendMouse(e);
+  });
+  canvas.addEventListener('mouseup', (e) => {
+    e.preventDefault();
+    mouseButtons &= ~browserBtnToBit(e.button);
+    sendMouse(e);
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    // deltaY > 0 = scroll down. iBMC convention: positive = wheel-up,
+    // negative = wheel-down. Java's MouseWheelEvent.getWheelRotation()
+    // returns +/- rotations and we just pass that signed byte.
+    const w = e.deltaY > 0 ? -1 : 1;
+    sendMouse(e, w);
+  }, {passive: false});
+
+  // Focus hint: show when the canvas is unfocused so the user knows to click.
+  const $hint = document.getElementById('focus-hint');
+  function refreshHint() {
+    if (document.activeElement !== canvas) $hint.classList.add('show');
+    else $hint.classList.remove('show');
+  }
+  canvas.addEventListener('focus', refreshHint);
+  canvas.addEventListener('blur', refreshHint);
+  setTimeout(refreshHint, 200);
+
+  // Hard-coded combos (most common: CAD, CAB, Ctrl+Alt+F1/F2). These build
+  // a transient HID report instead of going through the press/release path.
+  function sendCombo(name) {
+    const combos = {
+      cad:  {mods: 0x01|0x04, keys: [0x4C]},  // Ctrl+Alt+Del
+      cab:  {mods: 0x01|0x04, keys: [0x2A]},  // Ctrl+Alt+Backspace
+      caf1: {mods: 0x01|0x04, keys: [0x3A]},  // Ctrl+Alt+F1
+      caf2: {mods: 0x01|0x04, keys: [0x3B]},
+      esc:  {mods: 0,         keys: [0x29]},
+      f2:   {mods: 0,         keys: [0x3B]},
+    };
+    const c = combos[name];
+    if (!c || ws.readyState !== WebSocket.OPEN) return;
+    const press = [c.mods, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < c.keys.length; i++) press[2 + i] = c.keys[i];
+    ws.send(JSON.stringify({type: 'key', report: press}));
+    setTimeout(() => {
+      ws.send(JSON.stringify({type: 'key', report: [0,0,0,0,0,0,0,0]}));
+    }, 80);
+  }
 
   // --- Power / boot / vmedia ---------------------------------------------
   async function powerAct(act) {

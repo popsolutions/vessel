@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import socket
 import threading
 import time
@@ -42,7 +43,7 @@ from ..vmedia.kvm_stream import (
     pack_kvm_frame,
 )
 from ..vmedia.login import Session, login
-from .codec_old import bgr233_to_rgb888, decode_old_rle
+from .codec_old import BGR233_PALETTE, bgr233_to_rgb888, decode_old_rle  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -287,11 +288,39 @@ class KvmClient:
         self.blade_sock.sendall(pack_kvm_frame(
             OP_HEART_BEAT, body, self._blade_sid(), secure=False))
 
+    def request_keyframe(self) -> None:
+        """Ask the chassis for a fresh I-frame.
+
+        OldRLE diff frames carry `delta = old_screen XOR new_screen`. If
+        our local `prev` ever drifts from the chassis's notion of `old`
+        (a missed/corrupt chunk, an out-of-order delivery, a sentinel
+        slipping through) every subsequent XOR compounds the error
+        until the next keyframe rebases. Java's BladeThread requests an
+        I-frame via `resendData` (op 8) the moment it detects trouble.
+        We don't have the same drift detection yet, so we just nudge
+        periodically to cap how long bad pixels can persist.
+        """
+        if self.blade_sock is None or self.blade_no is None:
+            return
+        body = bytes([self.blade_no & 0xFF])
+        try:
+            self.blade_sock.sendall(pack_kvm_frame(
+                8, body, self._blade_sid(), secure=False))
+        except OSError as e:
+            log.debug("request_keyframe send failed: %s", e)
+
     def _heartbeat_loop(self) -> None:
-        """Heartbeat both sockets every ~2s."""
+        """Heartbeat both sockets every ~2s.
+
+        We deliberately don't piggyback an op-8 I-frame request on
+        every heartbeat tick — the chassis disconnects when
+        `resendData` is sent too aggressively. Now that the W/2 row
+        rotation has eliminated the stride bug that caused XOR drift,
+        the chassis's own keyframe cadence (~one every 3 seconds in
+        practice) is plenty.
+        """
         while not self._stop.is_set():
             try:
-                # SMM heartbeat carries 1-byte payload per captured pcap
                 if self.smm_sock is not None:
                     self._send_smm(OP_HEART_BEAT, bytes([0]))
                 self._send_blade_heartbeat()
@@ -363,12 +392,27 @@ class KvmClient:
         )
 
     # ------------------------------------------------------------------
-    def frames(self) -> Iterator[tuple[int, int, int, bytes]]:
-        """Yield (img_id, width, height, encoded_data) tuples — real frames only.
+    def frames(self) -> Iterator[tuple[int, int, int, bool, bytes]]:
+        """Yield (img_id, width, height, is_diff, encoded_data) tuples.
 
-        The chassis sends ~99% sentinel/keepalive deltas (total=5,
-        w=33408, h=480). We drop those — the browser keeps the last
-        real keyframe on its canvas.
+        Header layout (Python `p` index = Java `bytes` index + 1, because
+        Java's BladeThread.run strips an extra byte before the buffer
+        reaches KVMUtil.setVar):
+
+            p[1..2] BE   chunk position (0 = first chunk of a frame)
+            p[3]         frame number (img_id, 1-byte rolling counter)
+            p[4..7] BE   total compressed length (packLength)
+            p[8]         top bit = diff flag, low 7 bits = width hi
+            p[9]         width lo  ⇒  width = ((p[8] & 0x7F) << 8) | p[9]
+            p[10..11] BE height
+            p[13..14] BE remoteX (mouse, ignored here)
+            p[15..16] BE remoteY
+            p[17]        colorBit
+
+        Sentinel/keepalive frames carry a tiny payload with diff=1 — they
+        are valid diff frames carrying "no change". We surface them with
+        `is_diff=True` so the upstream XOR step can apply them as a no-op
+        rather than dropping the frame and stalling the canvas.
         """
         if self.blade_sock is None:
             raise RuntimeError("call open() before frames()")
@@ -385,72 +429,307 @@ class KvmClient:
             p = fr.payload
             if len(p) < 4:
                 continue
-            chunk_no = p[2]
+            chunk_pos = (p[1] << 8) | p[2]
             img_id = p[3]
-            if chunk_no == 0:
+            if chunk_pos == 0:
                 if len(p) < 18:
                     continue
                 total = int.from_bytes(p[4:8], "big")
-                w = int.from_bytes(p[8:10], "big")
+                is_diff = (p[8] & 0x80) != 0
+                w = ((p[8] & 0x7F) << 8) | p[9]
                 h = int.from_bytes(p[10:12], "big")
-                # Drop sentinels: tiny payload OR absurd dimensions
-                if total < 100 or w == 0 or h == 0 or w > 4096 or h > 4096:
+                if w == 0 or h == 0 or w > 4096 or h > 4096:
                     continue
-                partial[img_id] = {"data": bytearray(), "total": total,
-                                   "w": w, "h": h}
+                partial[img_id] = {"chunks": {}, "received": 0,
+                                   "total": total, "w": w, "h": h,
+                                   "diff": is_diff}
             else:
                 slot = partial.get(img_id)
                 if slot is None:
                     continue
-                slot["data"].extend(p[4:])
-                if len(slot["data"]) >= slot["total"]:
-                    yield (img_id, slot["w"], slot["h"],
-                           bytes(slot["data"][:slot["total"]]))
+                # Index by chunk_pos so we can reassemble in order. The
+                # Huawei codec is allowed to deliver chunks in any
+                # sequence (Java's KVMUtil.combine iterates `bufferA`
+                # by chunk_pos, not arrival order). Linear append
+                # produced left/right half-swaps when the chassis
+                # interleaved them — visible as each chassis row
+                # appearing rotated by W/2.
+                if chunk_pos in slot["chunks"]:
+                    continue
+                payload = p[4:]
+                slot["chunks"][chunk_pos] = payload
+                slot["received"] += len(payload)
+                if slot["received"] >= slot["total"]:
+                    # Reassemble in chunk_pos order, MIRRORING JAVA EXACTLY:
+                    # Java's `KVMUtil.combine()` builds `data` of size
+                    # `packLength+1`, leaves `data[0] = 0` (untouched),
+                    # then concatenates chunk[1..N] starting at `data[1]`
+                    # (`int index = 1`). The OldRLE decoder then reads
+                    # from `i = 1`, so `data[1]` (the first byte of
+                    # chunk[1]) becomes the first colour byte. WITHOUT
+                    # the leading zero, our decoder reads the SECOND
+                    # byte of chunk[1] as the first colour and every
+                    # subsequent run is shifted — accumulating to a
+                    # ~260-pixel horizontal offset between Palemoon's
+                    # render and ours.
+                    ordered = bytearray(b"\x00")
+                    for cp in sorted(slot["chunks"]):
+                        ordered.extend(slot["chunks"][cp])
+                    payload_bytes = bytes(ordered[:slot["total"] + 1])
+                    # Java's DrawThread skip rule: a diff frame whose
+                    # entire payload is "5 bytes with leading 0" is a
+                    # pure keepalive — XOR-ing it onto the framebuffer
+                    # paints garbage (the OldRLE state machine reads
+                    # past the end and produces stray colours in the
+                    # top-left). Real small diffs start with a non-zero
+                    # byte, so the leading-byte test cleanly separates
+                    # them from sentinels.
+                    if (slot["diff"] and slot["total"] == 5
+                            and payload_bytes[0] == 0):
+                        partial.pop(img_id, None)
+                        continue
+                    yield (img_id, slot["w"], slot["h"], slot["diff"],
+                           payload_bytes)
                     partial.pop(img_id, None)
 
     # ------------------------------------------------------------------
-    # Input — preliminary; will be wired into the WS in a follow-up.
+    # Input — keyboard (HID 8-byte report) and absolute mouse.
     # ------------------------------------------------------------------
-    def send_key(self, scancode: int, pressed: bool) -> None:
-        body = bytes([scancode & 0xFF, 1 if pressed else 0])
-        if self.blade_sock is None:
-            return
-        self.blade_sock.sendall(pack_kvm_frame(
-            OP_KEY_PACK, body, self._blade_sid(), secure=False))
+    def _encrypt_input(self, plaintext: bytes) -> bytes:
+        """AES-128-CBC NoPadding encrypt — Java's `AESHandler.encry_bytes`.
 
-    def send_mouse(self, dx: int, dy: int, buttons: int) -> None:
-        body = bytes([dx & 0xFF, dy & 0xFF, buttons & 0xFF,
-                      (self.blade_no or 0) & 0xFF])
+        Pads `plaintext` with zeros to the next 16-byte boundary and
+        encrypts with `kbd_secret_key` as the AES key and
+        `vmm_secret_key` as the IV (Java reuses vmmkey as the IV for
+        keyboard/mouse — see `BladeThread.getBladeKeyIV`). Output is a
+        multiple of 16 bytes.
+
+        The chassis ALWAYS expects encrypted keyboard/mouse on the
+        per-blade socket once the session is established — confirmed
+        by capturing Palemoon's outgoing op-3 frames and seeing
+        16-byte AES-shaped ciphertext where our code was sending raw
+        HID bytes. The chassis side AES-decrypted our plaintext into
+        random scancodes, which the user saw as totally unrelated
+        characters.
+        """
+        from cryptography.hazmat.primitives.ciphers import (
+            Cipher,
+            algorithms,
+            modes,
+        )
+
+        pad_len = (-len(plaintext)) % 16
+        padded = plaintext + b"\x00" * pad_len
+        cipher = Cipher(algorithms.AES(self.kbd_secret_key),
+                        modes.CBC(self.vmm_secret_key))
+        return cipher.encryptor().update(padded) + cipher.encryptor().finalize()
+
+    def _send_encrypted_input(self, op: int, blade_no: int,
+                              encrypted: bytes) -> None:
+        """Build & send an encrypted keyboard/mouse frame.
+
+        Wire layout (matches Palemoon's captured op-3/op-5 traffic):
+          [FE F6][lenH lenL] [sessionID 4B] [00 00] [op] [bladeNo] [enc]
+
+        CRC field is forced to 0,0 in the encrypted path (Java does
+        `packData[sessidLen+4]=0; packData[sessidLen+5]=0;`). Length
+        field counts CRC + op + bladeNo + ciphertext.
+        """
         if self.blade_sock is None:
             return
-        self.blade_sock.sendall(pack_kvm_frame(
-            OP_MOUSE_PACK, body, self._blade_sid(), secure=False))
+        from ..vmedia.kvm_stream import _byte_swap_4byte_chunks
+
+        body_with_crc = (b"\x00\x00"
+                         + bytes([op & 0xFF, blade_no & 0xFF])
+                         + encrypted)
+        body_len = len(body_with_crc)
+        sessionid_swapped = _byte_swap_4byte_chunks(self._blade_sid())
+        head = bytes([PACKHEAD1, PACKHEAD2,
+                      (body_len >> 8) & 0x7F, body_len & 0xFF])
+        self.blade_sock.sendall(head + sessionid_swapped + body_with_crc)
+
+    def send_key_report(self, hid_report: bytes) -> None:
+        """Send an 8-byte HID keyboard report, AES-encrypted.
+
+        Delegates to the validated `kvm_core.pack.keyboard_pack`.
+
+        HID report layout (USB Boot Keyboard):
+            byte 0: modifier mask (LCtrl=1, LShift=2, LAlt=4, LMeta=8,
+                                   RCtrl=16, RShift=32, RAlt=64, RMeta=128)
+            byte 1: reserved (0)
+            bytes 2..7: up to 6 simultaneously-pressed USB HID usage codes
+        """
+        if self.blade_sock is None or self.blade_no is None or self.session is None:
+            return
+        if len(hid_report) != 8:
+            raise ValueError(f"hid_report must be 8 bytes, got {len(hid_report)}")
+        from ..kvm_core.pack import keyboard_pack
+        frame = keyboard_pack(
+            blade_no=self.blade_no,
+            hid_report_8b=hid_report,
+            blade_codekey=self.session.verifyvalue,
+            encrypted=False,   # bThread.getEncrytedStatus() — false = 4B sessionID
+            is_new=True,       # bThread.isNew() — true ⇒ payload AES-encrypted
+        )
+        self.blade_sock.sendall(frame)
+
+    def send_mouse_abs(self, x: int, y: int, buttons: int,
+                       wheel: int = 0) -> None:
+        """Send absolute mouse coords (0..3000), AES-encrypted.
+
+        Delegates to the validated `kvm_core.pack.mouse_pack_abs`.
+        """
+        if self.blade_sock is None or self.blade_no is None or self.session is None:
+            return
+        from ..kvm_core.pack import mouse_pack_abs
+        frame = mouse_pack_abs(
+            x_3000=x, y_3000=y, buttons=buttons, wheel=wheel,
+            blade_no=self.blade_no,
+            blade_codekey=self.session.verifyvalue,
+            encrypted=False,
+            is_new=True,
+        )
+        self.blade_sock.sendall(frame)
 
 
 # ----------------------------------------------------------------------
-# Adapter for the GUI: yield (img_id, png_bytes).
+# Adapter for the GUI: yield (img_id, png_bytes), applying XOR for diffs.
 # ----------------------------------------------------------------------
 
-def live_pngs(host: str, user: str, password: str, slot: int,
-              verify_tls: bool = False) -> Iterator[tuple[int, bytes]]:
-    """Yield (img_id, png_bytes) for live blade frames.
+def open_live_session(host: str, user: str, password: str, slot: int,
+                      verify_tls: bool = False) -> "KvmClient":
+    """Build a `KvmClient`, run the handshake, return it ready to stream.
 
-    Owns the `KvmClient` lifetime; closes on exit.
+    Caller owns the lifetime — typically used as a context manager:
+
+        with open_live_session(...) as cli:
+            for png in iter_pngs(cli):
+                ...
+    """
+    cli = KvmClient(host, user, password, verify_tls=verify_tls)
+    try:
+        cli.open(slot)
+    except Exception:
+        cli.close()
+        raise
+    return cli
+
+
+def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
+    """Decode the live frame stream into PNGs, applying XOR for diffs.
+
+    The Huawei codec emits ~1 keyframe every few seconds plus a stream
+    of XOR-deltas in BGR233 space. We keep the last decoded BGR233
+    framebuffer per (width, height); for keyframes we replace it, for
+    diff frames we XOR in place. Then we always render the persistent
+    framebuffer — so every yielded PNG is a complete screen, not a
+    partial update.
+
+    Encoding goes through PIL's 8-bit "P" (palette) mode using
+    `BGR233_PALETTE`. That keeps the per-pixel work inside libpng — a
+    640×480 frame encodes in ~5 ms instead of the ~275 ms an RGB
+    expansion + PNG would take.
     """
     from PIL import Image as PILImage
 
-    cli = KvmClient(host, user, password, verify_tls=verify_tls)
-    with cli:
-        cli.open(slot)
-        for img_id, w, h, data in cli.frames():
-            try:
-                fb = decode_old_rle(data, w, h)
-                rgb = bgr233_to_rgb888(fb)
-                pim = PILImage.frombytes("RGB", (w, h), rgb)
-                buf = io.BytesIO()
-                pim.save(buf, format="PNG", optimize=False)
-                yield img_id, buf.getvalue()
-            except Exception as e:
-                log.warning("decode/encode failed for img 0x%02x: %s",
-                            img_id, e)
+    fb: bytearray | None = None
+    fb_w = 0
+    fb_h = 0
+    # Per-frame timing accumulators; flushed to log every 30 frames so
+    # we can see where the live pipeline burns its budget. Helps decide
+    # whether the user-visible lag is decoder, XOR, encode, or chassis-
+    # side latency.
+    n_perf = 0
+    perf_decode_ms = 0.0
+    perf_xor_ms = 0.0
+    perf_encode_ms = 0.0
+    perf_total_ms = 0.0
+    for img_id, w, h, is_diff, data in cli.frames():
+        t_start = time.monotonic()
+        try:
+            decoded = decode_old_rle(data, w, h)
+        except Exception as e:
+            log.warning("decode failed for img 0x%02x (diff=%s, %d B): %s",
+                        img_id, is_diff, len(data), e)
+            continue
+        t_decoded = time.monotonic()
+        perf_decode_ms += (t_decoded - t_start) * 1000.0
+        # Resolution change or first keyframe: reset the persistent buffer.
+        if fb is None or fb_w != w or fb_h != h:
+            if is_diff:
+                # No base to XOR onto at this resolution yet. Drop the
+                # frame and wait for the next keyframe at the new size.
                 continue
+            log.info("KVM resolution: %dx%d (decoded buffer %d B)",
+                     w, h, len(decoded))
+            fb = bytearray(decoded)
+            fb_w, fb_h = w, h
+        elif is_diff:
+            # XOR-delta in BGR233 space. Going through int.from_bytes /
+            # to_bytes lets CPython do the XOR in C, which makes a 640×480
+            # framebuffer (300 KB) cost microseconds instead of the tens
+            # of milliseconds a Python-level for-loop would.
+            n = min(len(fb), len(decoded))
+            xored = (int.from_bytes(bytes(fb[:n]), "big")
+                     ^ int.from_bytes(decoded[:n], "big")).to_bytes(n, "big")
+            fb[:n] = xored
+        else:
+            fb[:] = decoded
+        try:
+            # Live chassis screens show text correctly when we render
+            # the decoded buffer directly (no row rotation). A live
+            # Debian terminal screenshot proved that rotating by W/2
+            # produces a fake "two-column" split where each chassis row
+            # gets cut in half and the halves displayed in swapped
+            # positions — i.e. the ROTATION is what causes the split,
+            # not the chassis. Earlier offline tests against captured
+            # 720×400 Emulex BIOS frames seemed to need the rotation;
+            # that may have been a one-off codec mode quirk that the
+            # NewRLE port will clarify. Default OFF for now.
+            #   HMM_KVM_ROW_ROTATE=off    — no rotation (default)
+            #   HMM_KVM_ROW_ROTATE=always — force W/2 row rotation
+            policy = os.environ.get("HMM_KVM_ROW_ROTATE", "off").lower()
+            do_rotate = (policy == "always")
+            if do_rotate:
+                half = fb_w // 2
+                rotated = bytearray(fb_w * fb_h)
+                for y in range(fb_h):
+                    row_start = y * fb_w
+                    row_end = row_start + fb_w
+                    row = fb[row_start:row_end]
+                    rotated[row_start:row_end] = row[half:] + row[:half]
+                src_buf = bytes(rotated)
+            else:
+                src_buf = bytes(fb)
+            t_xor = time.monotonic()
+            perf_xor_ms += (t_xor - t_decoded) * 1000.0
+            pim = PILImage.frombytes("P", (fb_w, fb_h), src_buf)
+            pim.putpalette(BGR233_PALETTE)
+            buf = io.BytesIO()
+            pim.save(buf, format="PNG", optimize=False, compress_level=1)
+            yield img_id, buf.getvalue()
+            t_end = time.monotonic()
+            perf_encode_ms += (t_end - t_xor) * 1000.0
+            perf_total_ms += (t_end - t_start) * 1000.0
+            n_perf += 1
+            if n_perf >= 30:
+                log.info(
+                    "KVM perf (last 30 frames): decode=%.1fms xor+rotate=%.1fms"
+                    " encode+yield=%.1fms total=%.1fms ⇒ ~%.1f fps max",
+                    perf_decode_ms / n_perf, perf_xor_ms / n_perf,
+                    perf_encode_ms / n_perf, perf_total_ms / n_perf,
+                    1000.0 / max(perf_total_ms / n_perf, 0.01),
+                )
+                n_perf = 0
+                perf_decode_ms = perf_xor_ms = perf_encode_ms = perf_total_ms = 0.0
+        except Exception as e:
+            log.warning("encode failed for img 0x%02x: %s", img_id, e)
+            continue
+
+
+def live_pngs(host: str, user: str, password: str, slot: int,
+              verify_tls: bool = False) -> Iterator[tuple[int, bytes]]:
+    """Backwards-compatible one-shot helper. Owns the cli lifetime."""
+    with open_live_session(host, user, password, slot,
+                           verify_tls=verify_tls) as cli:
+        yield from iter_pngs(cli)

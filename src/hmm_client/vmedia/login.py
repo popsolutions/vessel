@@ -88,10 +88,36 @@ def login(host: str, user: str, password: str, *, verify_tls: bool = False) -> S
         r.raise_for_status()
         emb = _parse_embed(r.text)
 
-    verifyvalue, aes_key_kvm = parse_secretkey(emb["secretkey"])
+    verifyvalue_from_secretkey, aes_key_kvm = parse_secretkey(emb["secretkey"])
     aes_iv = parse_secretiv(emb["secretiv"])
     aes_key_vmedia = parse_codekey_ext(emb["codekey_ext"])
     verifyvalueext = parse_secretiv(emb["verifyvalueext"])  # 16 bytes hex
+
+    # Java's KVMApplet.init does `Integer.parseInt(getParameter("verifyvalue"))`
+    # — it reads the explicit `verifyvalue` decimal embed parameter, NOT the
+    # first 4 bytes of secretkey. We previously did the latter; if the chassis
+    # ever emits mismatched values, our PBKDF2 password (= str(verifyvalue))
+    # disagrees with the chassis's, every derived key is wrong, and AES-
+    # decrypted keyboard data lands as random scancodes — exactly the user's
+    # "characters with NOTHING to do" symptom. Prefer the explicit param;
+    # fall back to the parsed value only if the parameter is missing.
+    import logging as _logging
+    _l = _logging.getLogger(__name__)
+    explicit_vv = emb.get("verifyvalue")
+    if explicit_vv:
+        try:
+            verifyvalue = int(explicit_vv)
+        except ValueError:
+            _l.warning("verifyvalue param not an int: %r — falling back to "
+                       "secretkey[0:4]", explicit_vv)
+            verifyvalue = verifyvalue_from_secretkey
+        else:
+            if verifyvalue != verifyvalue_from_secretkey:
+                _l.info("verifyvalue: explicit=%d secretkey[0:4]=%d "
+                        "(using explicit)",
+                        verifyvalue, verifyvalue_from_secretkey)
+    else:
+        verifyvalue = verifyvalue_from_secretkey
 
     return Session(
         host=host,
