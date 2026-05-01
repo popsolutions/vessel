@@ -31,7 +31,11 @@ from ..snapshot import run_snapshot
 _log = logging.getLogger(__name__)
 
 
+_HEALTH_PATHS = frozenset(("/healthz", "/readyz"))
+
+
 def _gui_auth(
+    request: Request,
     creds: HTTPBasicCredentials | None = Depends(_auth.security),
 ) -> str:
     """Global FastAPI dependency: HTTP Basic Auth when configured.
@@ -39,7 +43,13 @@ def _gui_auth(
     When `VESSEL_GUI_PASSWORD_HASH` is set, every request must carry
     valid Basic credentials. When unset, returns "anonymous" so route
     handlers can still record an actor in the audit log.
+
+    Health-check endpoints (`/healthz`, `/readyz`) bypass auth so
+    Kubernetes / load balancers / uptime probes can poll without
+    credentials. They reveal nothing actionable beyond reachability.
     """
+    if request.url.path in _HEALTH_PATHS:
+        return "healthcheck"
     return _auth.require_auth(creds=creds)
 
 
@@ -88,6 +98,63 @@ def _settings(request: Request | None = None) -> Settings:
     if request is not None:
         host = request.cookies.get(_HOST_COOKIE)
     return Settings.load(host_override=host)
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Liveness probe — always 200 if the process can serve requests.
+
+    No external checks; Kubernetes restarts the pod when this fails,
+    so it must not depend on chassis reachability or any blocking
+    network call. Bypasses auth (see `_gui_auth`).
+    """
+    return JSONResponse({"status": "ok", "service": "vessel"})
+
+
+@app.get("/readyz")
+def readyz() -> JSONResponse:
+    """Readiness probe — 200 only when chassis-touching ops would
+    plausibly succeed. Specifically:
+
+      - HMM host is reachable on the configured port (TCP connect)
+      - Audit log path is writable (test-write a probe record)
+
+    Returns 503 with a `failing` list when any check fails.
+    Kubernetes / load balancers should remove failing instances from
+    rotation but NOT restart them — `/healthz` is the restart signal.
+    Bypasses auth.
+    """
+    import socket as _socket
+
+    from .. import audit as _audit
+
+    failing: list[str] = []
+    s = _settings()
+
+    # 1. HMM TCP reachability — quick connect with short timeout.
+    try:
+        with _socket.create_connection((s.hmm_host, 443), timeout=2.0):
+            pass
+    except OSError as exc:
+        failing.append(f"hmm-tcp:{exc.__class__.__name__}")
+
+    # 2. Audit log writable — log_op fails-soft and returns False.
+    audit_ok = _audit.log_op(
+        op="readyz.probe",
+        target_kind="hmm",
+        target_id=s.hmm_host,
+        result="success",
+        evidence={"probe": "readyz writability check"},
+    )
+    if not audit_ok:
+        failing.append("audit-log:unwritable")
+
+    if failing:
+        return JSONResponse(
+            {"status": "not-ready", "failing": failing},
+            status_code=503,
+        )
+    return JSONResponse({"status": "ready", "checks": ["hmm-tcp", "audit-log"]})
 
 
 @app.get("/", response_class=HTMLResponse)
