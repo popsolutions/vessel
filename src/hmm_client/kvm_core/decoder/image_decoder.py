@@ -509,10 +509,17 @@ class NewRleDecoder:
         """3- or 4-colour palette RLE — byte stream of 6-bit run + 2-bit index."""
         index_type = 4 if rle_type == 3 else 3   # type 2 → 3 colours, type 3 → 4
         palette_bytes = index_type * 3
+        # Java doesn't bounds-check the palette — short reads either
+        # roll over the next bytes or trip ArrayIndexOutOfBoundsException
+        # which the outer try/catch swallows. Pad with zeros so we
+        # don't crash on idle "no-change" frames where the chassis
+        # truncates the trailing palette bytes.
         if src_col_pos + palette_bytes > len(palette):
-            raise DecoderError(
-                f"type {rle_type} palette too short ({len(palette)} < {palette_bytes})"
+            log.debug(
+                "type %d palette short (%d < %d) — padding with zeros",
+                rle_type, len(palette), palette_bytes,
             )
+            palette = palette + b"\x00" * (src_col_pos + palette_bytes - len(palette))
         temcolor = [
             ycbcr2rgb(
                 palette[src_col_pos + 3 * k + 0],

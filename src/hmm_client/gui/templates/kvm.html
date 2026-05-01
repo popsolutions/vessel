@@ -124,6 +124,30 @@
     #statusbar .err { color: var(--rudder-off); }
     #statusbar .spacer { flex: 1; }
 
+    /* Codec pill — bottom-left selector for OldRLE / NewRLE */
+    #codec-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #0f172a; color: var(--text);
+      border: 1px solid var(--line); border-radius: 999px;
+      padding: 2px 10px 2px 8px;
+      font-family: inherit; font-size: 10px;
+      cursor: pointer; user-select: none;
+      transition: background .12s, border-color .12s;
+    }
+    #codec-pill:hover { background: #1e293b; border-color: var(--rudder-pending); }
+    #codec-pill .codec-key { color: var(--dim); letter-spacing: .04em; }
+    #codec-pill .codec-val { color: var(--text); font-weight: 600; }
+    #codec-pill .codec-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #475569; box-shadow: 0 0 0 2px rgba(71,85,105,.2);
+    }
+    #codec-pill.is-newrle .codec-dot {
+      background: var(--rudder-pending);
+      box-shadow: 0 0 0 2px rgba(180,83,9,.25);
+    }
+    #codec-pill.is-newrle { border-color: var(--rudder-pending); }
+    #codec-pill.is-newrle .codec-val { color: var(--rudder-pending); }
+
     /* ---- ISO PICKER MODAL ---- */
     .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7);
       display: none; align-items: center; justify-content: center; z-index: 100; }
@@ -268,6 +292,12 @@
      STATUS BAR (applet-faithful) — Received / Sent / FrameNum
      ============================================================ -->
 <div id="statusbar">
+  <button id="codec-pill" type="button" onclick="toggleCodec()"
+          title="Toggle KVM codec — NewRLE is experimental, OldRLE is the known-good path">
+    <span class="codec-dot" aria-hidden="true"></span>
+    <span class="codec-key">codec</span>
+    <span id="codec-label" class="codec-val">OldRLE</span>
+  </button>
   <span class="hint" id="status-hint">Click the screen to capture keyboard ⌨</span>
   <span class="spacer"></span>
   <span class="stat"><span class="k">Received:</span><span class="v" id="rx-bytes">0</span></span>
@@ -357,8 +387,12 @@
   // WebSocket video
   let pendingMeta = null;
   let frameWindow = [];
+  // Forward the ?codec= param to the WebSocket so the server can
+  // pick OldRLE vs NewRLE for this connection.
+  const _qs = new URLSearchParams(location.search);
+  const _wsParams = _qs.has('codec') ? '?codec=' + encodeURIComponent(_qs.get('codec')) : '';
   const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://')
-              + location.host + `/api/blade/${slot}/kvm/ws`;
+              + location.host + `/api/blade/${slot}/kvm/ws` + _wsParams;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   ws.onopen  = () => { $conn.textContent = 'open';   $conn.className = 'ok'; };
@@ -417,6 +451,31 @@
     document.getElementById('side').classList.toggle('collapsed');
     setTimeout(fitCanvas, 220);
   }
+
+  // Codec selector — reads ?codec= from URL, toggles to the other one,
+  // reloads (the WebSocket reconnects with the new ?codec= which the
+  // server passes through to KvmClient.use_newrle). NewRLE is
+  // experimental — when it fails the canvas usually shows a single
+  // red square and decode errors land in the server log; flip back
+  // to OldRLE to recover.
+  function currentCodec() {
+    const p = new URLSearchParams(location.search);
+    return (p.get('codec') || 'oldrle').toLowerCase() === 'newrle'
+      ? 'newrle' : 'oldrle';
+  }
+  function toggleCodec() {
+    const next = currentCodec() === 'newrle' ? 'oldrle' : 'newrle';
+    const p = new URLSearchParams(location.search);
+    p.set('codec', next);
+    location.search = p.toString();
+  }
+  // Update label + pill colour on load to reflect the active codec.
+  document.addEventListener('DOMContentLoaded', () => {
+    const lbl = document.getElementById('codec-label');
+    if (lbl) lbl.textContent = currentCodec() === 'newrle' ? 'NewRLE' : 'OldRLE';
+    const pill = document.getElementById('codec-pill');
+    if (pill) pill.classList.toggle('is-newrle', currentCodec() === 'newrle');
+  });
 
   // Keyboard capture (USB HID)
   const HID_KEY = {

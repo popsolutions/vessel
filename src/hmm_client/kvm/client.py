@@ -107,7 +107,8 @@ class KvmClient:
     """
 
     def __init__(self, host: str, user: str, password: str,
-                 verify_tls: bool = False) -> None:
+                 verify_tls: bool = False,
+                 use_newrle: bool | None = None) -> None:
         self.host = host
         self.user = user
         self.password = password
@@ -124,14 +125,19 @@ class KvmClient:
         self.blade_no: int | None = None
         self.blade_state: BladeState | None = None
 
-        # Codec selector: when HMM_KVM_USE_NEWRLE is set, request the
-        # chassis NewRLE/JPEG ("FPEG") path during connect_blade and
-        # route frame data through kvm_core.decoder. Default (unset) =
-        # OldRLE BGR233 path that is known-good against this chassis.
-        self.use_newrle: bool = (
-            os.environ.get("HMM_KVM_USE_NEWRLE", "").lower()
-            in ("1", "true", "yes", "on")
-        )
+        # Codec selector. Per-call `use_newrle` wins; otherwise fall
+        # back to the HMM_KVM_USE_NEWRLE env var. When True we request
+        # the chassis NewRLE/JPEG ("FPEG") path during connect_blade
+        # and route frame data through kvm_core.decoder. Default
+        # (None + unset env) = OldRLE BGR233 path known-good against
+        # this chassis.
+        if use_newrle is not None:
+            self.use_newrle = bool(use_newrle)
+        else:
+            self.use_newrle = (
+                os.environ.get("HMM_KVM_USE_NEWRLE", "").lower()
+                in ("1", "true", "yes", "on")
+            )
 
         self._stop = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
@@ -259,9 +265,19 @@ class KvmClient:
 
     def _send_connect_blade(self, blade_no: int, color_bit: int,
                             fpeg_alg: bool) -> None:
-        """Body: [bladeNO, colorBit, fpegAlg]; 4-byte verifyvalue sessionID."""
+        """Body: [bladeNO, colorBit, fpegAlg]; 4-byte verifyvalue sessionID.
+
+        Java's `PackData.connectBlade` appends an extra `0x01` byte at
+        `packData[sessidLen + 10]` when `fpegAlg=true` — that's the
+        actual signal the chassis uses to switch from OldRLE to the
+        NewRLE/JPEG codec. Without this byte the chassis ignores the
+        flag and keeps sending OldRLE frames. Verified against
+        `re/decompiled/sources/com/kvm/PackData.java:336-338`.
+        """
         assert self.blade_sock is not None
         body = bytes([blade_no & 0xFF, color_bit & 0xFF, 1 if fpeg_alg else 0])
+        if fpeg_alg:
+            body += b"\x01"
         self.blade_sock.sendall(pack_kvm_frame(OP_CONNECT_BLADE, body,
                                                self._blade_sid(), secure=False))
 
@@ -611,7 +627,8 @@ class KvmClient:
 # ----------------------------------------------------------------------
 
 def open_live_session(host: str, user: str, password: str, slot: int,
-                      verify_tls: bool = False) -> "KvmClient":
+                      verify_tls: bool = False,
+                      use_newrle: bool | None = None) -> "KvmClient":
     """Build a `KvmClient`, run the handshake, return it ready to stream.
 
     Caller owns the lifetime — typically used as a context manager:
@@ -619,8 +636,13 @@ def open_live_session(host: str, user: str, password: str, slot: int,
         with open_live_session(...) as cli:
             for png in iter_pngs(cli):
                 ...
+
+    `use_newrle=True` requests the chassis NewRLE/JPEG codec; `False`
+    forces OldRLE. `None` falls back to HMM_KVM_USE_NEWRLE env var
+    (default = OldRLE).
     """
-    cli = KvmClient(host, user, password, verify_tls=verify_tls)
+    cli = KvmClient(host, user, password, verify_tls=verify_tls,
+                    use_newrle=use_newrle)
     try:
         cli.open(slot)
     except Exception:
@@ -653,6 +675,7 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
     perf_decode_ms = 0.0
     perf_encode_ms = 0.0
     perf_total_ms = 0.0
+    debug_dumped = 0   # log first few payloads as hex for protocol inspection
 
     for img_id, w, h, is_diff, data in cli.frames():
         t_start = time.monotonic()
@@ -660,6 +683,13 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
             decoder = NewRleDecoder(w, h)
             cur_w, cur_h = w, h
             log.info("KVM(NewRLE) resolution: %dx%d", w, h)
+        if debug_dumped < 3:
+            head = data[:48].hex()
+            log.warning(
+                "NewRLE frame #%d (img=0x%02x diff=%s len=%d) head=%s",
+                debug_dumped, img_id, is_diff, len(data), head,
+            )
+            debug_dumped += 1
 
         try:
             blocks = decoder.decode(data, w, h)

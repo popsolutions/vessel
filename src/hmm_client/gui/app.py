@@ -345,11 +345,23 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
     default_live = os.environ.get("HMM_KVM_LIVE_DEFAULT", "1") == "1"
     want_live = qs.get("live", "1" if default_live else "0") == "1"
 
+    # Codec selector — `?codec=newrle` opts into the experimental
+    # NewRLE/JPEG path; `?codec=oldrle` forces the known-good OldRLE.
+    # Anything else (or unset) defers to the HMM_KVM_USE_NEWRLE env
+    # var (which itself defaults to OldRLE when unset).
+    codec_qs = qs.get("codec", "").lower()
+    if codec_qs == "newrle":
+        use_newrle: bool | None = True
+    elif codec_qs == "oldrle":
+        use_newrle = False
+    else:
+        use_newrle = None
+
     s = _settings_from_ws(ws)
 
     if want_live:
         try:
-            await _stream_live(ws, s, slot)
+            await _stream_live(ws, s, slot, use_newrle=use_newrle)
             return
         except WebSocketDisconnect:
             return
@@ -418,7 +430,8 @@ def _settings_from_ws(ws: WebSocket) -> Settings:
     return Settings.load(host_override=host)
 
 
-async def _stream_live(ws: WebSocket, s: Settings, slot: int) -> None:
+async def _stream_live(ws: WebSocket, s: Settings, slot: int,
+                        *, use_newrle: bool | None = None) -> None:
     """Run the live KVM handshake, push decoded PNGs out and accept
     keyboard/mouse input from the browser.
 
@@ -440,7 +453,8 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int) -> None:
 
     cli = await loop.run_in_executor(
         None, lambda: open_live_session(s.hmm_host, s.hmm_user, s.hmm_password,
-                                        slot, verify_tls=s.verify_tls))
+                                        slot, verify_tls=s.verify_tls,
+                                        use_newrle=use_newrle))
 
     # Coalescing slot: the decoder thread pumps frames at chassis speed
     # (~30 fps) and keeps overwriting `latest` with the freshest one.
