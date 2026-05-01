@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import io
 import logging
+import struct
 
 from PIL import Image
 
@@ -94,3 +95,54 @@ def jpeg_decode_as_image(jpeg_body: bytes) -> Image.Image:
 def blank_tile(color: tuple[int, int, int] = (0, 0, 0)) -> Image.Image:
     """Empty 64×64 tile — used as the initial framebuffer fill."""
     return Image.new("RGB", (TILE_SIZE, TILE_SIZE), color=color)
+
+
+def create_rle_img(
+    int_pixels: list[int] | tuple[int, ...],
+    width: int = TILE_SIZE,
+    height: int = TILE_SIZE,
+) -> Image.Image:
+    """Java's `ImageCreater.createRLEImg(int[], 64, 64)`.
+
+    The NewRLE decoder builds a 4096-element int array where each
+    element is a packed `0x00RRGGBB` value (output of
+    `ColorConverter.ycbcr2rgb`). Java wraps that in a
+    `MemoryImageSource` and an AWT `Image`. We pack the same ints into
+    PIL "RGB" mode bytes, three per pixel, in row-major order.
+    """
+    if len(int_pixels) < width * height:
+        raise ValueError(
+            f"int_pixels too short for {width}x{height}: got {len(int_pixels)}"
+        )
+    buf = bytearray(width * height * 3)
+    for idx in range(width * height):
+        v = int_pixels[idx]
+        buf[idx * 3]     = (v >> 16) & 0xFF   # R
+        buf[idx * 3 + 1] = (v >>  8) & 0xFF   # G
+        buf[idx * 3 + 2] =  v        & 0xFF   # B
+    return Image.frombytes("RGB", (width, height), bytes(buf))
+
+
+def create_rle_img_bgr233(
+    byte_pixels: bytes,
+    width: int = TILE_SIZE,
+    height: int = TILE_SIZE,
+) -> Image.Image:
+    """Java's `ImageCreater.createRLEImg_0(byte[], 64, 64)` — BGR233 path.
+
+    The legacy `decodeRLEorJPEG3` path emits one BGR233 byte per pixel
+    instead of a packed RGB888 int. This helper handles that by
+    expanding each byte through `bgr233_to_rgb888()` on the fly. The
+    live `decodeRLEorJPEG1` path uses `create_rle_img()` instead.
+    """
+    if len(byte_pixels) < width * height:
+        raise ValueError(
+            f"byte_pixels too short for {width}x{height}: got {len(byte_pixels)}"
+        )
+    buf = bytearray(width * height * 3)
+    for idx in range(width * height):
+        r, g, b = bgr233_to_rgb888(byte_pixels[idx])
+        buf[idx * 3]     = r
+        buf[idx * 3 + 1] = g
+        buf[idx * 3 + 2] = b
+    return Image.frombytes("RGB", (width, height), bytes(buf))
