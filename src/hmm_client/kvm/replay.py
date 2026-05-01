@@ -10,6 +10,7 @@ will use:
 
 The browser side draws each PNG into a `<canvas>` as it arrives.
 """
+
 from __future__ import annotations
 
 import io
@@ -24,6 +25,7 @@ from .transport import parse_kvm_stream, reassemble_images
 def image_to_png_bytes(image: _DecImage) -> bytes:
     """Decode one reassembled image and encode it as PNG."""
     from PIL import Image as PILImage  # local import: optional dep at runtime
+
     fb = decode_old_rle(bytes(image.data), image.width, image.height)
     rgb = bgr233_to_rgb888(fb)
     pim = PILImage.frombytes("RGB", (image.width, image.height), rgb)

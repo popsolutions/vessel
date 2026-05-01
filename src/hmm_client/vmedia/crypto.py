@@ -12,6 +12,7 @@ from the HMM Web embed parameters:
 NoPadding means callers must pre-pad to a multiple of 16 bytes themselves
 (matching the Java side's manual round-up in AESHandler.encry).
 """
+
 from __future__ import annotations
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -41,9 +42,7 @@ def aes_cbc_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
     _check("key", key, 16)
     _check("iv", iv, 16)
     if len(ciphertext) % BLOCK_SIZE != 0:
-        raise ValueError(
-            f"ciphertext length {len(ciphertext)} not a multiple of {BLOCK_SIZE}"
-        )
+        raise ValueError(f"ciphertext length {len(ciphertext)} not a multiple of {BLOCK_SIZE}")
     decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
     return decryptor.update(ciphertext) + decryptor.finalize()
 

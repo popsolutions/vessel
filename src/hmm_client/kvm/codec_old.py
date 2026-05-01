@@ -32,6 +32,7 @@ behaviour faithfully — the algorithm depends on the mutation.
 
 Decoded output passes through `bgr233_to_rgb888()` for display.
 """
+
 from __future__ import annotations
 
 
@@ -44,7 +45,7 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
     pix_number = width * height
     image = bytearray(pix_number)
     buf = bytearray(data)  # mutable working copy (Java mutates input)
-    i = 1                  # Java starts at i=1; byte 0 is unused / flag
+    i = 1  # Java starts at i=1; byte 0 is unused / flag
     count = 0
     flag_rem = False
 
@@ -103,9 +104,11 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
                 elif sel == 0x80:
                     if i + 4 >= len(buf):
                         return bytes(image)
-                    extend = (((buf[i + 2] << 12) & 0x3F000)
-                              + ((buf[i + 3] << 4) & 0xFF0)
-                              + ((buf[i + 4] >> 4) & 0x0F))
+                    extend = (
+                        ((buf[i + 2] << 12) & 0x3F000)
+                        + ((buf[i + 3] << 4) & 0xFF0)
+                        + ((buf[i + 4] >> 4) & 0x0F)
+                    )
                     size = min(count + extend, pix_number)
                     for j in range(count, size):
                         image[j] = buf_color
@@ -121,9 +124,11 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
                 else:  # 0xC0
                     if i + 4 >= len(buf):
                         return bytes(image)
-                    extend = (((buf[i + 2] << 16) & 0x3F0000)
-                              + ((buf[i + 3] << 8) & 0xFF00)
-                              + (buf[i + 4] & 0xFF))
+                    extend = (
+                        ((buf[i + 2] << 16) & 0x3F0000)
+                        + ((buf[i + 3] << 8) & 0xFF00)
+                        + (buf[i + 4] & 0xFF)
+                    )
                     size = min(count + extend, pix_number)
                     for j in range(count, size):
                         image[j] = buf_color
@@ -190,9 +195,11 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
                 elif sel == 0x08:
                     if i + 3 >= len(buf):
                         return bytes(image)
-                    extend = (((buf[i + 1] << 16) & 0x30000)
-                              + ((buf[i + 2] << 8) & 0xFF00)
-                              + (buf[i + 3] & 0xFF))
+                    extend = (
+                        ((buf[i + 1] << 16) & 0x30000)
+                        + ((buf[i + 2] << 8) & 0xFF00)
+                        + (buf[i + 3] & 0xFF)
+                    )
                     size = min(count + extend, pix_number)
                     for j in range(count, size):
                         image[j] = buf_color
@@ -206,10 +213,12 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
                 else:  # 0x0C
                     if i + 4 >= len(buf):
                         return bytes(image)
-                    extend = (((buf[i + 1] << 20) & 0x300000)
-                              + ((buf[i + 2] << 12) & 0xFF000)
-                              + ((buf[i + 3] << 4) & 0xFF0)
-                              + ((buf[i + 4] >> 4) & 0x0F))
+                    extend = (
+                        ((buf[i + 1] << 20) & 0x300000)
+                        + ((buf[i + 2] << 12) & 0xFF000)
+                        + ((buf[i + 3] << 4) & 0xFF0)
+                        + ((buf[i + 4] >> 4) & 0x0F)
+                    )
                     size = min(count + extend, pix_number)
                     for j in range(count, size):
                         image[j] = buf_color
@@ -227,12 +236,16 @@ def decode_old_rle(data: bytes, width: int, height: int) -> bytes:
     return bytes(image)
 
 
-_R_LUT = bytes((((b & 0x07) << 5) | ((b & 0x07) << 2) | ((b & 0x07) >> 1)) & 0xFF
-               for b in range(256))
-_G_LUT = bytes((((b & 0x38) << 2) | ((b & 0x38) >> 1) | ((b & 0x38) >> 4)) & 0xFF
-               for b in range(256))
-_B_LUT = bytes(((b & 0xC0) | ((b & 0xC0) >> 2) | ((b & 0xC0) >> 4) | ((b & 0xC0) >> 6)) & 0xFF
-               for b in range(256))
+_R_LUT = bytes(
+    (((b & 0x07) << 5) | ((b & 0x07) << 2) | ((b & 0x07) >> 1)) & 0xFF for b in range(256)
+)
+_G_LUT = bytes(
+    (((b & 0x38) << 2) | ((b & 0x38) >> 1) | ((b & 0x38) >> 4)) & 0xFF for b in range(256)
+)
+_B_LUT = bytes(
+    ((b & 0xC0) | ((b & 0xC0) >> 2) | ((b & 0xC0) >> 4) | ((b & 0xC0) >> 6)) & 0xFF
+    for b in range(256)
+)
 
 
 def bgr233_to_rgb888(framebuffer: bytes) -> bytes:
@@ -259,6 +272,4 @@ def bgr233_to_rgb888(framebuffer: bytes) -> bytes:
 # 256 entries × (R, G, B), concatenated, 768 bytes total. The live KVM
 # pipeline uses this so the per-pixel work stays in libpng instead of a
 # Python loop — ~50× speedup over `bgr233_to_rgb888` for 640×480.
-BGR233_PALETTE: bytes = bytes(
-    c for i in range(256) for c in (_R_LUT[i], _G_LUT[i], _B_LUT[i])
-)
+BGR233_PALETTE: bytes = bytes(c for i in range(256) for c in (_R_LUT[i], _G_LUT[i], _B_LUT[i]))

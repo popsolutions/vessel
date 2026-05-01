@@ -24,6 +24,7 @@ The two key-derivation entry points are:
   The encryption keys (kvmKey/kbdKey/vmmKey) are NOT rotated here —
   only the sessionID changes.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ from .aes import generate_stored_password_hash
 # --- Wire-protocol framing constants ---------------------------------------
 PACKHEAD1: int = 0xFE
 PACKHEAD2: int = 0xF6
-LEN_HIGHBIT_SECURE: int = 0x80   # `Base.getsecurekvm()` flag bit in length high
+LEN_HIGHBIT_SECURE: int = 0x80  # `Base.getsecurekvm()` flag bit in length high
 
 # --- Session sizes (Base.java:50-52) ---------------------------------------
 SESSION_ID_LEN: int = 24
@@ -53,7 +54,7 @@ RAPMSG_CLOSE_TIME: int = 5000
 # --- Frame rate (Base.java:40-42) ------------------------------------------
 ZERO_FRAME: int = 0
 ONE_FRAME: int = 1
-THIRTY_FRAME: int = 35   # default contrRate value (op 28)
+THIRTY_FRAME: int = 35  # default contrRate value (op 28)
 
 # --- KVM data plane port (chassis-wide; bladeNO selects the blade) ---------
 BLADE_PORT_DEFAULT: int = 2200
@@ -61,6 +62,7 @@ HANDSHAKE_PORT_DEFAULT: int = 2198
 
 
 # --- Byte helpers (Java's KVMUtil.* statics) -------------------------------
+
 
 def per_int_to_byte_con(data: bytes) -> bytes:
     """Mirror `KVMUtil.perIntToByteCon` — byte-swap each 4-byte chunk.
@@ -77,7 +79,7 @@ def per_int_to_byte_con(data: bytes) -> bytes:
         raise ValueError(f"length must be multiple of 4, got {len(data)}")
     out = bytearray(len(data))
     for i in range(0, len(data), 4):
-        out[i:i + 4] = data[i:i + 4][::-1]
+        out[i : i + 4] = data[i : i + 4][::-1]
     return bytes(out)
 
 
@@ -96,6 +98,7 @@ def byte_to_int_be(data: bytes, offset: int, length: int) -> int:
 
 # --- Session-key bundle (initSessionIDAndKey output) -----------------------
 
+
 @dataclass(frozen=True)
 class SessionKeys:
     """Output of `Base.initSessionIDAndKey(verifyvalue, secretiv)`.
@@ -105,17 +108,17 @@ class SessionKeys:
     used when sending or encrypting on the wire
     (`getXxxSecretKeyBigEnd`).
     """
-    session_id: bytes              # 24 bytes
-    kvm_secret_key: bytes          # 16 bytes
-    kbd_secret_key: bytes          # 16 bytes
-    vmm_secret_key: bytes          # 16 bytes
+
+    session_id: bytes  # 24 bytes
+    kvm_secret_key: bytes  # 16 bytes
+    kbd_secret_key: bytes  # 16 bytes
+    vmm_secret_key: bytes  # 16 bytes
     kvm_secret_key_bigend: bytes
     kbd_secret_key_bigend: bytes
     vmm_secret_key_bigend: bytes
 
 
-def init_session_keys(verifyvalue: int, secretiv: bytes,
-                      iterations: int = 5000) -> SessionKeys:
+def init_session_keys(verifyvalue: int, secretiv: bytes, iterations: int = 5000) -> SessionKeys:
     """Java's `Base.initSessionIDAndKey(int userKey)`.
 
         char[] plain = String.valueOf(userKey).toCharArray();
@@ -131,10 +134,9 @@ def init_session_keys(verifyvalue: int, secretiv: bytes,
     if len(secretiv) < 16:
         raise ValueError(f"secretiv must be >=16 bytes, got {len(secretiv)}")
     salt = secretiv[:16]
-    hashed = generate_stored_password_hash(str(verifyvalue), 72,
-                                           rand_salt=salt,
-                                           hmac="PBKDF2WithHmacSHA1",
-                                           iterations=iterations)
+    hashed = generate_stored_password_hash(
+        str(verifyvalue), 72, rand_salt=salt, hmac="PBKDF2WithHmacSHA1", iterations=iterations
+    )
     return SessionKeys(
         session_id=hashed[0:24],
         kvm_secret_key=hashed[24:40],
@@ -146,8 +148,9 @@ def init_session_keys(verifyvalue: int, secretiv: bytes,
     )
 
 
-def rotate_session_id(verifyvalueext: bytes | str, negotiateiv: bytes,
-                      hmac: str, iterations: int) -> bytes:
+def rotate_session_id(
+    verifyvalueext: bytes | str, negotiateiv: bytes, hmac: str, iterations: int
+) -> bytes:
     """Java's post-suite-negotiation `setSessionID(...)` step.
 
         BladeThread.distributeConsultation():
@@ -162,7 +165,6 @@ def rotate_session_id(verifyvalueext: bytes | str, negotiateiv: bytes,
     """
     if len(negotiateiv) < 16:
         raise ValueError(f"negotiateiv must be >=16 bytes, got {len(negotiateiv)}")
-    return generate_stored_password_hash(verifyvalueext, 24,
-                                         rand_salt=negotiateiv[:16],
-                                         hmac=hmac,
-                                         iterations=iterations)
+    return generate_stored_password_hash(
+        verifyvalueext, 24, rand_salt=negotiateiv[:16], hmac=hmac, iterations=iterations
+    )

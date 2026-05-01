@@ -17,6 +17,7 @@ Wire format (per com/kvm/PackData.java + UnPackData.java):
 When secure=True the body (CRC + op + payload) is AES-128-CBC-NoPadding
 encrypted with secretkey/secretiv from the embed.
 """
+
 from __future__ import annotations
 
 import socket
@@ -26,6 +27,8 @@ from dataclasses import dataclass
 # CRC-16/CCITT-FALSE: poly=0x1021, init=0x0000, refin=False, refout=False, xorout=0x0000
 # Java's "CRC_16_H" matches this with init seed=0 per the wPoly=4129 branch.
 _CRC16_TABLE: list[int] = []
+
+
 def _build_crc16_table() -> None:
     for i in range(256):
         crc = i << 8
@@ -33,6 +36,8 @@ def _build_crc16_table() -> None:
             crc = ((crc << 1) ^ 0x1021) if (crc & 0x8000) else (crc << 1)
             crc &= 0xFFFF
         _CRC16_TABLE.append(crc)
+
+
 _build_crc16_table()
 
 
@@ -93,8 +98,7 @@ def _huawei_crc_field(crc16: int) -> bytes:
     return struct.pack(">H", crc16 & 0xFFFF)
 
 
-def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes,
-                   secure: bool = False) -> bytes:
+def pack_kvm_frame(op: int, payload: bytes, sessionid: bytes, secure: bool = False) -> bytes:
     """Build a KVM frame for the wire.
 
     Java's PackData runs `KVMUtil.perIntToByteCon` on the sessionID before
@@ -125,30 +129,30 @@ def _byte_swap_4byte_chunks(data: bytes) -> bytes:
         raise ValueError(f"length must be % 4, got {len(data)}")
     out = bytearray(len(data))
     for i in range(0, len(data), 4):
-        out[i:i+4] = data[i:i+4][::-1]
+        out[i : i + 4] = data[i : i + 4][::-1]
     return bytes(out)
 
 
-def initial_session_keys(verifyvalue: int, secretiv: bytes,
-                         iterations: int = 5000) -> dict[str, bytes]:
+def initial_session_keys(
+    verifyvalue: int, secretiv: bytes, iterations: int = 5000
+) -> dict[str, bytes]:
     """Java's Base.initSessionIDAndKey() — initial chassis-wide sessionID + AES keys.
 
-        plain  = str(verifyvalue)          # decimal string ("245898693")
-        salt   = secretiv (16 bytes)
-        iter   = 5000 (from generateStoredPasswordHash 3-arg form)
-        length = 72 bytes
-        ↓
-        sessionID    = out[0:24]
-        kvmSecretKey = out[24:40]    bigEnd = perIntToByteCon(kvm)
-        kbdSecretKey = out[40:56]    bigEnd = perIntToByteCon(kbd)
-        vmmSecretKey = out[56:72]    bigEnd = perIntToByteCon(vmm)
+    plain  = str(verifyvalue)          # decimal string ("245898693")
+    salt   = secretiv (16 bytes)
+    iter   = 5000 (from generateStoredPasswordHash 3-arg form)
+    length = 72 bytes
+    ↓
+    sessionID    = out[0:24]
+    kvmSecretKey = out[24:40]    bigEnd = perIntToByteCon(kvm)
+    kbdSecretKey = out[40:56]    bigEnd = perIntToByteCon(kbd)
+    vmmSecretKey = out[56:72]    bigEnd = perIntToByteCon(vmm)
     """
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     password = str(verifyvalue).encode("ascii")
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=72, salt=secretiv,
-                     iterations=iterations)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=72, salt=secretiv, iterations=iterations)
     out = kdf.derive(password)
     return {
         "sessionid": out[:24],
@@ -161,8 +165,9 @@ def initial_session_keys(verifyvalue: int, secretiv: bytes,
     }
 
 
-def derive_sessionid_pbkdf2(verifyvalueext_hex: str, salt: bytes,
-                            iterations: int = 5000, length: int = 24) -> bytes:
+def derive_sessionid_pbkdf2(
+    verifyvalueext_hex: str, salt: bytes, iterations: int = 5000, length: int = 24
+) -> bytes:
     """Post-suite-negotiation sessionID per BladeThread.java:339.
 
     NOTE: this is NOT used for the first REQ_BLADE_PRESENT packet. It rotates
@@ -171,9 +176,9 @@ def derive_sessionid_pbkdf2(verifyvalueext_hex: str, salt: bytes,
     """
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
     password = verifyvalueext_hex.encode("ascii")
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=length, salt=salt,
-                     iterations=iterations)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=length, salt=salt, iterations=iterations)
     return kdf.derive(password)
 
 
@@ -200,7 +205,9 @@ def recv_kvm_response(sock: socket.socket, timeout: float = 5.0) -> KvmFrame:
     return KvmFrame(
         sessionid=b"",  # server doesn't echo
         secure=False,
-        op=op, payload=payload, crc_ok=(expected == actual),
+        op=op,
+        payload=payload,
+        crc_ok=(expected == actual),
     )
 
 
@@ -221,6 +228,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 
 # --- High-level builders matching specific PackData methods ------------------
 
+
 def pack_req_vmm_codekey(blade_no: int, sessionid: bytes, secure: bool = False) -> bytes:
     """REQ_VMM_CODEKEY (op 49). Payload: 1 byte = bladeNO.
 
@@ -228,8 +236,9 @@ def pack_req_vmm_codekey(blade_no: int, sessionid: bytes, secure: bool = False) 
     in the BLADE_STATE response). The 4-byte sessionID is the per-blade
     `imagePaneCodeKey` int (byte-swapped via perIntToByteCon).
     """
-    return pack_kvm_frame(KVM_OP_REQ_VMM_CODEKEY, bytes([blade_no & 0xFF]),
-                          sessionid=sessionid, secure=secure)
+    return pack_kvm_frame(
+        KVM_OP_REQ_VMM_CODEKEY, bytes([blade_no & 0xFF]), sessionid=sessionid, secure=secure
+    )
 
 
 def parse_vmm_codekey_report(payload: bytes) -> tuple[bytes, bytes]:
@@ -243,23 +252,24 @@ def parse_vmm_codekey_report(payload: bytes) -> tuple[bytes, bytes]:
     if len(payload) < 37:
         raise ValueError(f"VMM_CODEENCRYPT_REPORT payload must be ≥37 B, got {len(payload)}")
     # payload[0] = status flag (00 = ok per observed traffic)
-    nego_codekey = payload[1:21]   # 20 bytes (ASCII chars)
-    nego_salt = payload[21:37]      # 16 bytes (binary)
+    nego_codekey = payload[1:21]  # 20 bytes (ASCII chars)
+    nego_salt = payload[21:37]  # 16 bytes (binary)
     return nego_codekey, nego_salt
 
 
-def derive_vmedia_session_keys(nego_codekey: bytes, nego_salt: bytes,
-                               iterations: int = 5000) -> dict[str, bytes]:
+def derive_vmedia_session_keys(
+    nego_codekey: bytes, nego_salt: bytes, iterations: int = 5000
+) -> dict[str, bytes]:
     """PBKDF2-HMAC-SHA1 derivation per VMConsole.createSecretCertifyCode (bCodeKeyNego=true).
 
-        password = nego_codekey (20 ASCII bytes -> char[] -> UTF-8 bytes)
-        salt     = nego_salt (16 bytes)
-        iter     = 5000 (initial; rotated by setSuitePack)
-        length   = 56 bytes
-        ↓
-        sessionid = out[:24]   ← CERTIFY_ID body field on port 8501 (after byte-swap)
-        secretKey = out[24:40]
-        secretIV  = out[40:56]
+    password = nego_codekey (20 ASCII bytes -> char[] -> UTF-8 bytes)
+    salt     = nego_salt (16 bytes)
+    iter     = 5000 (initial; rotated by setSuitePack)
+    length   = 56 bytes
+    ↓
+    sessionid = out[:24]   ← CERTIFY_ID body field on port 8501 (after byte-swap)
+    secretKey = out[24:40]
+    secretIV  = out[40:56]
     """
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -268,8 +278,7 @@ def derive_vmedia_session_keys(nego_codekey: bytes, nego_salt: bytes,
         raise ValueError(f"nego_codekey must be 20 bytes, got {len(nego_codekey)}")
     if len(nego_salt) != 16:
         raise ValueError(f"nego_salt must be 16 bytes, got {len(nego_salt)}")
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=56, salt=nego_salt,
-                     iterations=iterations)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA1(), length=56, salt=nego_salt, iterations=iterations)
     out = kdf.derive(bytes(nego_codekey))
     return {
         "sessionid": out[:24],

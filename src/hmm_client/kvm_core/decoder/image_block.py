@@ -10,6 +10,7 @@ mutable dataclass — the codec state machine in `image_decoder.py`
 keeps an `ImageBlock[blockcount]` array and patches fields in place
 when later tile tokens reference earlier tiles by index.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ class ImageBlock:
                                    variants that re-use earlier tile's
                                    colour list)
     """
+
     image: Any | None = None
     fill: bool = False
     cut_width: int = 0

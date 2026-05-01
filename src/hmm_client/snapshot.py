@@ -9,6 +9,7 @@ Writes ``snapshots/<UTC-stamp>/`` with:
 
 iBMC per-blade dumps are deferred (issue #7 - tunnel path blocked).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -87,6 +88,7 @@ def _snap_redfish(s: Settings, out: Path, items: list[Item]) -> None:
     seen: dict[str, dict[str, Any]] = {}
 
     with RedfishClient(s.hmm_host, s.hmm_user, s.hmm_password, verify=s.verify_tls) as rf:
+
         def fetch(path: str) -> dict[str, Any]:
             if path in seen:
                 return seen[path]
@@ -151,8 +153,14 @@ def _snap_hmm_cli(
 
     cli = paramiko.SSHClient()
     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    cli.connect(s.hmm_host, username=s.hmm_user, password=s.hmm_password,
-                timeout=15, allow_agent=False, look_for_keys=False)
+    cli.connect(
+        s.hmm_host,
+        username=s.hmm_user,
+        password=s.hmm_password,
+        timeout=15,
+        allow_agent=False,
+        look_for_keys=False,
+    )
     chan = cli.invoke_shell()
     time.sleep(1.0)
     _drain(chan)
@@ -193,7 +201,7 @@ def _snap_hmm_cli(
 
     chan.close()
     cli.close()
-    console.print(f"  hmm-cli    [green]smmget x {len(smmget_lines)//3 - 1}, diagnostics ok[/]")
+    console.print(f"  hmm-cli    [green]smmget x {len(smmget_lines) // 3 - 1}, diagnostics ok[/]")
 
 
 def _snap_switches(s: Settings, out: Path, items: list[Item], switches: list[str]) -> None:
@@ -202,8 +210,14 @@ def _snap_switches(s: Settings, out: Path, items: list[Item], switches: list[str
 
     cli = paramiko.SSHClient()
     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    cli.connect(s.hmm_host, username=s.hmm_user, password=s.hmm_password,
-                timeout=15, allow_agent=False, look_for_keys=False)
+    cli.connect(
+        s.hmm_host,
+        username=s.hmm_user,
+        password=s.hmm_password,
+        timeout=15,
+        allow_agent=False,
+        look_for_keys=False,
+    )
     chan = cli.invoke_shell()
     time.sleep(1.0)
     _drain(chan)
@@ -219,8 +233,14 @@ def _snap_switches(s: Settings, out: Path, items: list[Item], switches: list[str
 
         sftp_cli = paramiko.SSHClient()
         sftp_cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        sftp_cli.connect(s.hmm_host, username=s.hmm_user, password=s.hmm_password,
-                         timeout=15, allow_agent=False, look_for_keys=False)
+        sftp_cli.connect(
+            s.hmm_host,
+            username=s.hmm_user,
+            password=s.hmm_password,
+            timeout=15,
+            allow_agent=False,
+            look_for_keys=False,
+        )
         sftp = sftp_cli.open_sftp()
         try:
             src = f"/tmp/exchange/{sw}/{sw}.tar.gz"
@@ -241,8 +261,14 @@ def _snap_switches(s: Settings, out: Path, items: list[Item], switches: list[str
 def _hmm_software_version(s: Settings) -> str:
     cli = paramiko.SSHClient()
     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    cli.connect(s.hmm_host, username=s.hmm_user, password=s.hmm_password,
-                timeout=15, allow_agent=False, look_for_keys=False)
+    cli.connect(
+        s.hmm_host,
+        username=s.hmm_user,
+        password=s.hmm_password,
+        timeout=15,
+        allow_agent=False,
+        look_for_keys=False,
+    )
     chan = cli.invoke_shell()
     time.sleep(1.0)
     _drain(chan)
@@ -280,8 +306,7 @@ def run_snapshot() -> Path:
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
     console.print(f"\n[bold green]Snapshot complete[/] -> {out / 'manifest.json'}")
-    console.print(f"  {len(items)} files, "
-                  f"{sum(it.bytes for it in items):,} bytes total")
+    console.print(f"  {len(items)} files, {sum(it.bytes for it in items):,} bytes total")
     return out
 
 

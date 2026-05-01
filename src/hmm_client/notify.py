@@ -31,6 +31,7 @@ configured).
 `level` only affects the emoji prefix; it doesn't change the destination
 or the priority. Levels: `info` (default), `ok`, `warn`, `error`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,9 +42,9 @@ import httpx
 log = logging.getLogger(__name__)
 
 _LEVEL_PREFIX = {
-    "info":  "ℹ️",
-    "ok":    "✅",
-    "warn":  "⚠️",
+    "info": "ℹ️",
+    "ok": "✅",
+    "warn": "⚠️",
     "error": "🚨",
 }
 
@@ -90,15 +91,15 @@ def notify_telegram(
     try:
         resp = httpx.post(
             url,
-            json={"chat_id": chat_id, "text": text,
-                  "disable_web_page_preview": True},
+            json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
             timeout=timeout_seconds,
         )
         if resp.status_code == 200:
             return True
         log.warning(
             "Telegram send failed: HTTP %d — %s",
-            resp.status_code, resp.text[:200],
+            resp.status_code,
+            resp.text[:200],
         )
         return False
     except (httpx.HTTPError, OSError) as exc:

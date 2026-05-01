@@ -25,6 +25,7 @@ spacing, and CX310 firmware revisions add extra trailing columns.
 We only require a header row containing literal "VID" and "Type",
 plus rows starting with a numeric VID.
 """
+
 from __future__ import annotations
 
 import re
@@ -42,9 +43,9 @@ _ROW_RE = re.compile(r"^\s*(\d+)\s+(\S+)\s+(.*)$")
 
 @dataclass(frozen=True)
 class PortMembership:
-    iface: str        # e.g. "GE0/0/1"
-    mode: str         # "UT" (untagged), "TG" (tagged), etc.
-    link_state: str   # "U" up, "D" down
+    iface: str  # e.g. "GE0/0/1"
+    mode: str  # "UT" (untagged), "TG" (tagged), etc.
+    link_state: str  # "U" up, "D" down
 
 
 @dataclass
@@ -111,11 +112,13 @@ def _extract_ports(text: str, initial_mode: str = "UT") -> list[PortMembership]:
     for m in _PORT_TOKEN_RE.finditer(text):
         if m.group("prefix"):
             current_mode = m.group("prefix")
-        out.append(PortMembership(
-            iface=m.group("iface"),
-            mode=current_mode,
-            link_state=m.group("state"),
-        ))
+        out.append(
+            PortMembership(
+                iface=m.group("iface"),
+                mode=current_mode,
+                link_state=m.group("state"),
+            )
+        )
     return out
 
 
@@ -127,11 +130,7 @@ class VlanDiff:
 
     @property
     def is_empty(self) -> bool:
-        return (
-            not self.added_vids
-            and not self.removed_vids
-            and not self.membership_changes
-        )
+        return not self.added_vids and not self.removed_vids and not self.membership_changes
 
 
 def diff_vlan_tables(
@@ -154,10 +153,10 @@ def diff_vlan_tables(
         b_unt, c_unt = set(b.untagged_ports), set(c.untagged_ports)
         change: dict[str, list[str]] = {}
         if b_tag != c_tag:
-            change["tagged_added"]   = sorted(c_tag - b_tag)
+            change["tagged_added"] = sorted(c_tag - b_tag)
             change["tagged_removed"] = sorted(b_tag - c_tag)
         if b_unt != c_unt:
-            change["untagged_added"]   = sorted(c_unt - b_unt)
+            change["untagged_added"] = sorted(c_unt - b_unt)
             change["untagged_removed"] = sorted(b_unt - c_unt)
         if change:
             diff.membership_changes[vid] = change

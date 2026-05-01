@@ -24,6 +24,7 @@ Many fields are best-effort: if the chassis wants extras we don't
 provide (suite-list negotiation, etc.) we degrade gracefully — log
 the unexpected op codes and keep going.
 """
+
 from __future__ import annotations
 
 import io
@@ -48,18 +49,18 @@ from .codec_old import BGR233_PALETTE, bgr233_to_rgb888, decode_old_rle  # noqa:
 log = logging.getLogger(__name__)
 
 # Op codes we send (from PackData.java)
-OP_REQ_BLADE_PRESENT     = 11
-OP_REQ_BLADE_STATE       = 20   # connMode=0 (legacy); chassis often expects 33
-OP_REQ_BLADE_STATE_TRANS = 33   # connMode=1; what the captured Palemoon used
-OP_CONNECT_BLADE         = 6
-OP_HEART_BEAT            = 9
-OP_KEY_PACK              = 3
-OP_MOUSE_PACK            = 5
-OP_CONTR_RATE            = 28   # frame-rate hint; payload = [framerate_byte]
-OP_MOUSE_MODE            = 36
-OP_MONITOR_BLADE         = 23   # PackData.monitorBlade; "wake/refresh" hint
+OP_REQ_BLADE_PRESENT = 11
+OP_REQ_BLADE_STATE = 20  # connMode=0 (legacy); chassis often expects 33
+OP_REQ_BLADE_STATE_TRANS = 33  # connMode=1; what the captured Palemoon used
+OP_CONNECT_BLADE = 6
+OP_HEART_BEAT = 9
+OP_KEY_PACK = 3
+OP_MOUSE_PACK = 5
+OP_CONTR_RATE = 28  # frame-rate hint; payload = [framerate_byte]
+OP_MOUSE_MODE = 36
+OP_MONITOR_BLADE = 23  # PackData.monitorBlade; "wake/refresh" hint
 
-DEFAULT_FRAMERATE = 35   # = Base.THIRTY_FRAME
+DEFAULT_FRAMERATE = 35  # = Base.THIRTY_FRAME
 
 # The KVM data-plane port is chassis-wide — packets identify their target
 # blade via the `bladeNO` byte. The pcap proves this: 192.168.1.30:2200
@@ -68,27 +69,28 @@ BLADE_PORT_DEFAULT = 2200
 
 # Op codes we receive (from UnPackData.java)
 OP_PRESENT_BLADE = 1
-OP_IMAGE_DATA    = 2
-OP_KEY_STATE     = 4
+OP_IMAGE_DATA = 2
+OP_KEY_STATE = 4
 OP_CONNECT_STATE = 8
-OP_BLADE_STATE   = 21
-OP_SECRET_NEGO   = 64
+OP_BLADE_STATE = 21
+OP_SECRET_NEGO = 64
 OP_KVM_SUITE_LIST = 67
 
 
 @dataclass(frozen=True)
 class BladeState:
     """Subset of `KVMUtil.showBladeDown` output."""
+
     blade_ip: str
     blade_port: int
-    rle_alg: bool          # state[0]
-    fpeg_alg: bool         # state[1]
-    bmc_reset: bool        # state[2]
-    blade_down: bool       # state[3]
-    flag4: bool            # state[4]
-    kvm_supported: bool    # state[5]
-    flag6: bool            # state[6]
-    blade_present: bool    # state[7]
+    rle_alg: bool  # state[0]
+    fpeg_alg: bool  # state[1]
+    bmc_reset: bool  # state[2]
+    blade_down: bool  # state[3]
+    flag4: bool  # state[4]
+    kvm_supported: bool  # state[5]
+    flag6: bool  # state[6]
+    blade_present: bool  # state[7]
     secure_kvm: bool
     secure_vmm: bool
 
@@ -97,7 +99,7 @@ class BladeState:
 class _ParsedFrame:
     op: int
     payload: bytes
-    raw_len: int           # body length on the wire (incl. CRC + op)
+    raw_len: int  # body length on the wire (incl. CRC + op)
 
 
 class KvmClient:
@@ -106,16 +108,21 @@ class KvmClient:
     Use as a context manager; iterate `frames()` to consume PNGs.
     """
 
-    def __init__(self, host: str, user: str, password: str,
-                 verify_tls: bool = False,
-                 use_newrle: bool | None = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        user: str,
+        password: str,
+        verify_tls: bool = False,
+        use_newrle: bool | None = None,
+    ) -> None:
         self.host = host
         self.user = user
         self.password = password
         self.verify_tls = verify_tls
 
         self.session: Session | None = None
-        self.smm_sessionid: bytes = b""   # 24 bytes
+        self.smm_sessionid: bytes = b""  # 24 bytes
         self.kvm_secret_key: bytes = b""  # 16 bytes (AES key, big-end)
         self.kbd_secret_key: bytes = b""
         self.vmm_secret_key: bytes = b""  # AES IV for reqBladeState
@@ -134,9 +141,11 @@ class KvmClient:
         if use_newrle is not None:
             self.use_newrle = bool(use_newrle)
         else:
-            self.use_newrle = (
-                os.environ.get("HMM_KVM_USE_NEWRLE", "").lower()
-                in ("1", "true", "yes", "on")
+            self.use_newrle = os.environ.get("HMM_KVM_USE_NEWRLE", "").lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
             )
 
         self._stop = threading.Event()
@@ -171,19 +180,23 @@ class KvmClient:
             raise ValueError(f"slot must be 1..32, got {slot}")
         self.blade_no = slot
 
-        self.session = login(self.host, self.user, self.password,
-                             verify_tls=self.verify_tls)
-        log.info("KVM login ok host=%s securekvm=%s port=%s",
-                 self.host, self.session.secure, self.session.handshake_port)
+        self.session = login(self.host, self.user, self.password, verify_tls=self.verify_tls)
+        log.info(
+            "KVM login ok host=%s securekvm=%s port=%s",
+            self.host,
+            self.session.secure,
+            self.session.handshake_port,
+        )
 
         keys = initial_session_keys(self.session.verifyvalue, self.session.aes_iv)
-        self.smm_sessionid   = keys["sessionid"]
-        self.kvm_secret_key  = keys["kvm_secret_key_bigend"]
-        self.kbd_secret_key  = keys["kbd_secret_key_bigend"]
-        self.vmm_secret_key  = keys["vmm_secret_key_bigend"]
+        self.smm_sessionid = keys["sessionid"]
+        self.kvm_secret_key = keys["kvm_secret_key_bigend"]
+        self.kbd_secret_key = keys["kbd_secret_key_bigend"]
+        self.vmm_secret_key = keys["vmm_secret_key_bigend"]
 
         self.smm_sock = socket.create_connection(
-            (self.host, self.session.handshake_port), timeout=15.0)
+            (self.host, self.session.handshake_port), timeout=15.0
+        )
         self.smm_sock.settimeout(20.0)
 
         self._send_smm(OP_REQ_BLADE_PRESENT, b"")
@@ -211,8 +224,7 @@ class KvmClient:
         # in op-20 mode; for op-33 it does carry the right port — but it's
         # always 2200 in practice). Use the default.
         port = self.blade_state.blade_port or BLADE_PORT_DEFAULT
-        self.blade_sock = socket.create_connection(
-            (self.host, port), timeout=15.0)
+        self.blade_sock = socket.create_connection((self.host, port), timeout=15.0)
         self.blade_sock.settimeout(30.0)
 
         # Per pcap: heartbeat -> connectBlade -> contrRate -> connectBlade.
@@ -230,7 +242,8 @@ class KvmClient:
             )
 
         self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat_loop, daemon=True, name=f"kvm-hb-{slot}")
+            target=self._heartbeat_loop, daemon=True, name=f"kvm-hb-{slot}"
+        )
         self._heartbeat_thread.start()
 
     # ------------------------------------------------------------------
@@ -258,13 +271,11 @@ class KvmClient:
         rand = bytearray(token_bytes(16))
         rand[0] = blade_no & 0xFF
         rand[1] = share_mode & 0xFF
-        cipher = Cipher(algorithms.AES(self.kvm_secret_key),
-                        modes.CBC(self.vmm_secret_key))
+        cipher = Cipher(algorithms.AES(self.kvm_secret_key), modes.CBC(self.vmm_secret_key))
         enc = cipher.encryptor().update(bytes(rand))
         self._send_smm(OP_REQ_BLADE_STATE_TRANS, enc)
 
-    def _send_connect_blade(self, blade_no: int, color_bit: int,
-                            fpeg_alg: bool) -> None:
+    def _send_connect_blade(self, blade_no: int, color_bit: int, fpeg_alg: bool) -> None:
         """Body: [bladeNO, colorBit, fpegAlg]; 4-byte verifyvalue sessionID.
 
         Java's `PackData.connectBlade` appends an extra `0x01` byte at
@@ -278,8 +289,9 @@ class KvmClient:
         body = bytes([blade_no & 0xFF, color_bit & 0xFF, 1 if fpeg_alg else 0])
         if fpeg_alg:
             body += b"\x01"
-        self.blade_sock.sendall(pack_kvm_frame(OP_CONNECT_BLADE, body,
-                                               self._blade_sid(), secure=False))
+        self.blade_sock.sendall(
+            pack_kvm_frame(OP_CONNECT_BLADE, body, self._blade_sid(), secure=False)
+        )
 
     # ------------------------------------------------------------------
     def _blade_sid(self) -> bytes:
@@ -298,25 +310,29 @@ class KvmClient:
         """contrRate (op 28) — single byte body."""
         if self.blade_sock is None:
             return
-        self.blade_sock.sendall(pack_kvm_frame(
-            OP_CONTR_RATE, bytes([framerate & 0xFF]),
-            self._blade_sid(), secure=False))
+        self.blade_sock.sendall(
+            pack_kvm_frame(
+                OP_CONTR_RATE, bytes([framerate & 0xFF]), self._blade_sid(), secure=False
+            )
+        )
 
     def _send_monitor_blade(self, blade_no: int) -> None:
         """monitorBlade (op 23) — body [bladeNO, 1]; nudges chassis to push frame."""
         if self.blade_sock is None:
             return
         body = bytes([blade_no & 0xFF, 1])
-        self.blade_sock.sendall(pack_kvm_frame(
-            OP_MONITOR_BLADE, body, self._blade_sid(), secure=False))
+        self.blade_sock.sendall(
+            pack_kvm_frame(OP_MONITOR_BLADE, body, self._blade_sid(), secure=False)
+        )
 
     def _send_blade_heartbeat(self) -> None:
         """Per-blade heartbeat. Payload is `[bladeNO]` per captured pcap."""
         if self.blade_sock is None or self.blade_no is None:
             return
         body = bytes([self.blade_no & 0xFF])
-        self.blade_sock.sendall(pack_kvm_frame(
-            OP_HEART_BEAT, body, self._blade_sid(), secure=False))
+        self.blade_sock.sendall(
+            pack_kvm_frame(OP_HEART_BEAT, body, self._blade_sid(), secure=False)
+        )
 
     def request_keyframe(self) -> None:
         """Ask the chassis for a fresh I-frame.
@@ -334,8 +350,7 @@ class KvmClient:
             return
         body = bytes([self.blade_no & 0xFF])
         try:
-            self.blade_sock.sendall(pack_kvm_frame(
-                8, body, self._blade_sid(), secure=False))
+            self.blade_sock.sendall(pack_kvm_frame(8, body, self._blade_sid(), secure=False))
         except OSError as e:
             log.debug("request_keyframe send failed: %s", e)
 
@@ -359,8 +374,7 @@ class KvmClient:
             self._stop.wait(2.0)
 
     # ------------------------------------------------------------------
-    def _recv_until(self, sock: socket.socket, want_op: int,
-                    timeout: float = 15.0) -> _ParsedFrame:
+    def _recv_until(self, sock: socket.socket, want_op: int, timeout: float = 15.0) -> _ParsedFrame:
         deadline = time.monotonic() + timeout
         while True:
             remaining = deadline - time.monotonic()
@@ -370,8 +384,7 @@ class KvmClient:
             fr = self._recv_one(sock)
             if fr.op == want_op:
                 return fr
-            log.debug("ignoring op %d (%d B) while waiting for %d",
-                      fr.op, fr.raw_len, want_op)
+            log.debug("ignoring op %d (%d B) while waiting for %d", fr.op, fr.raw_len, want_op)
 
     def _recv_one(self, sock: socket.socket) -> _ParsedFrame:
         head = self._recv_exact(sock, 4)
@@ -398,8 +411,7 @@ class KvmClient:
     def _parse_blade_state(payload: bytes) -> BladeState:
         """Parse BLADE_STATE op 21 payload (per `KVMUtil.showBladeDown`)."""
         if len(payload) < 9:
-            raise ValueError(f"BLADE_STATE payload too short: {len(payload)}B "
-                             f"hex={payload.hex()}")
+            raise ValueError(f"BLADE_STATE payload too short: {len(payload)}B hex={payload.hex()}")
         state_byte = payload[1]
         st = [(state_byte >> i) & 1 for i in range(8)]
         ip_bytes = payload[3:7]
@@ -470,9 +482,14 @@ class KvmClient:
                 h = int.from_bytes(p[10:12], "big")
                 if w == 0 or h == 0 or w > 4096 or h > 4096:
                     continue
-                partial[img_id] = {"chunks": {}, "received": 0,
-                                   "total": total, "w": w, "h": h,
-                                   "diff": is_diff}
+                partial[img_id] = {
+                    "chunks": {},
+                    "received": 0,
+                    "total": total,
+                    "w": w,
+                    "h": h,
+                    "diff": is_diff,
+                }
             else:
                 slot = partial.get(img_id)
                 if slot is None:
@@ -505,7 +522,7 @@ class KvmClient:
                     ordered = bytearray(b"\x00")
                     for cp in sorted(slot["chunks"]):
                         ordered.extend(slot["chunks"][cp])
-                    payload_bytes = bytes(ordered[:slot["total"] + 1])
+                    payload_bytes = bytes(ordered[: slot["total"] + 1])
                     # Java's DrawThread skip rule: a diff frame whose
                     # entire payload is "5 bytes with leading 0" is a
                     # pure keepalive — XOR-ing it onto the framebuffer
@@ -514,12 +531,10 @@ class KvmClient:
                     # top-left). Real small diffs start with a non-zero
                     # byte, so the leading-byte test cleanly separates
                     # them from sentinels.
-                    if (slot["diff"] and slot["total"] == 5
-                            and payload_bytes[0] == 0):
+                    if slot["diff"] and slot["total"] == 5 and payload_bytes[0] == 0:
                         partial.pop(img_id, None)
                         continue
-                    yield (img_id, slot["w"], slot["h"], slot["diff"],
-                           payload_bytes)
+                    yield (img_id, slot["w"], slot["h"], slot["diff"], payload_bytes)
                     partial.pop(img_id, None)
 
     # ------------------------------------------------------------------
@@ -550,12 +565,10 @@ class KvmClient:
 
         pad_len = (-len(plaintext)) % 16
         padded = plaintext + b"\x00" * pad_len
-        cipher = Cipher(algorithms.AES(self.kbd_secret_key),
-                        modes.CBC(self.vmm_secret_key))
+        cipher = Cipher(algorithms.AES(self.kbd_secret_key), modes.CBC(self.vmm_secret_key))
         return cipher.encryptor().update(padded) + cipher.encryptor().finalize()
 
-    def _send_encrypted_input(self, op: int, blade_no: int,
-                              encrypted: bytes) -> None:
+    def _send_encrypted_input(self, op: int, blade_no: int, encrypted: bytes) -> None:
         """Build & send an encrypted keyboard/mouse frame.
 
         Wire layout (matches Palemoon's captured op-3/op-5 traffic):
@@ -569,13 +582,10 @@ class KvmClient:
             return
         from ..vmedia.kvm_stream import _byte_swap_4byte_chunks
 
-        body_with_crc = (b"\x00\x00"
-                         + bytes([op & 0xFF, blade_no & 0xFF])
-                         + encrypted)
+        body_with_crc = b"\x00\x00" + bytes([op & 0xFF, blade_no & 0xFF]) + encrypted
         body_len = len(body_with_crc)
         sessionid_swapped = _byte_swap_4byte_chunks(self._blade_sid())
-        head = bytes([PACKHEAD1, PACKHEAD2,
-                      (body_len >> 8) & 0x7F, body_len & 0xFF])
+        head = bytes([PACKHEAD1, PACKHEAD2, (body_len >> 8) & 0x7F, body_len & 0xFF])
         self.blade_sock.sendall(head + sessionid_swapped + body_with_crc)
 
     def send_key_report(self, hid_report: bytes) -> None:
@@ -594,17 +604,17 @@ class KvmClient:
         if len(hid_report) != 8:
             raise ValueError(f"hid_report must be 8 bytes, got {len(hid_report)}")
         from ..kvm_core.pack import keyboard_pack
+
         frame = keyboard_pack(
             blade_no=self.blade_no,
             hid_report_8b=hid_report,
             blade_codekey=self.session.verifyvalue,
-            encrypted=False,   # bThread.getEncrytedStatus() — false = 4B sessionID
-            is_new=True,       # bThread.isNew() — true ⇒ payload AES-encrypted
+            encrypted=False,  # bThread.getEncrytedStatus() — false = 4B sessionID
+            is_new=True,  # bThread.isNew() — true ⇒ payload AES-encrypted
         )
         self.blade_sock.sendall(frame)
 
-    def send_mouse_abs(self, x: int, y: int, buttons: int,
-                       wheel: int = 0) -> None:
+    def send_mouse_abs(self, x: int, y: int, buttons: int, wheel: int = 0) -> None:
         """Send absolute mouse coords (0..3000), AES-encrypted.
 
         Delegates to the validated `kvm_core.pack.mouse_pack_abs`.
@@ -612,8 +622,12 @@ class KvmClient:
         if self.blade_sock is None or self.blade_no is None or self.session is None:
             return
         from ..kvm_core.pack import mouse_pack_abs
+
         frame = mouse_pack_abs(
-            x_3000=x, y_3000=y, buttons=buttons, wheel=wheel,
+            x_3000=x,
+            y_3000=y,
+            buttons=buttons,
+            wheel=wheel,
             blade_no=self.blade_no,
             blade_codekey=self.session.verifyvalue,
             encrypted=False,
@@ -626,9 +640,15 @@ class KvmClient:
 # Adapter for the GUI: yield (img_id, png_bytes), applying XOR for diffs.
 # ----------------------------------------------------------------------
 
-def open_live_session(host: str, user: str, password: str, slot: int,
-                      verify_tls: bool = False,
-                      use_newrle: bool | None = None) -> "KvmClient":
+
+def open_live_session(
+    host: str,
+    user: str,
+    password: str,
+    slot: int,
+    verify_tls: bool = False,
+    use_newrle: bool | None = None,
+) -> "KvmClient":
     """Build a `KvmClient`, run the handshake, return it ready to stream.
 
     Caller owns the lifetime — typically used as a context manager:
@@ -641,8 +661,7 @@ def open_live_session(host: str, user: str, password: str, slot: int,
     forces OldRLE. `None` falls back to HMM_KVM_USE_NEWRLE env var
     (default = OldRLE).
     """
-    cli = KvmClient(host, user, password, verify_tls=verify_tls,
-                    use_newrle=use_newrle)
+    cli = KvmClient(host, user, password, verify_tls=verify_tls, use_newrle=use_newrle)
     try:
         cli.open(slot)
     except Exception:
@@ -664,7 +683,7 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
     Resolution changes are handled inside `NewRleDecoder.decode()` —
     it re-inits its tile grid when (image_width, image_height) changes.
     """
-    from PIL import Image as PILImage   # noqa: F401  (used implicitly)
+    from PIL import Image as PILImage  # noqa: F401  (used implicitly)
 
     from ..kvm_core.decoder.image_decoder import NewRleDecoder, compose_frame
 
@@ -675,7 +694,7 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
     perf_decode_ms = 0.0
     perf_encode_ms = 0.0
     perf_total_ms = 0.0
-    debug_dumped = 0   # log first few payloads as hex for protocol inspection
+    debug_dumped = 0  # log first few payloads as hex for protocol inspection
 
     for img_id, w, h, is_diff, data in cli.frames():
         t_start = time.monotonic()
@@ -687,7 +706,11 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
             head = data[:48].hex()
             log.warning(
                 "NewRLE frame #%d (img=0x%02x diff=%s len=%d) head=%s",
-                debug_dumped, img_id, is_diff, len(data), head,
+                debug_dumped,
+                img_id,
+                is_diff,
+                len(data),
+                head,
             )
             debug_dumped += 1
 
@@ -696,7 +719,10 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
         except Exception as e:
             log.warning(
                 "NewRLE decode failed for img 0x%02x (diff=%s, %d B): %s",
-                img_id, is_diff, len(data), e,
+                img_id,
+                is_diff,
+                len(data),
+                e,
             )
             continue
         t_decoded = time.monotonic()
@@ -715,7 +741,8 @@ def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
                 log.info(
                     "KVM(NewRLE) perf (last 30): decode=%.1fms encode=%.1fms"
                     " total=%.1fms ⇒ ~%.1f fps max",
-                    perf_decode_ms / n_perf, perf_encode_ms / n_perf,
+                    perf_decode_ms / n_perf,
+                    perf_encode_ms / n_perf,
                     perf_total_ms / n_perf,
                     1000.0 / max(perf_total_ms / n_perf, 0.01),
                 )
@@ -769,8 +796,9 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
         try:
             decoded = decode_old_rle(data, w, h)
         except Exception as e:
-            log.warning("decode failed for img 0x%02x (diff=%s, %d B): %s",
-                        img_id, is_diff, len(data), e)
+            log.warning(
+                "decode failed for img 0x%02x (diff=%s, %d B): %s", img_id, is_diff, len(data), e
+            )
             continue
         t_decoded = time.monotonic()
         perf_decode_ms += (t_decoded - t_start) * 1000.0
@@ -780,8 +808,7 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
                 # No base to XOR onto at this resolution yet. Drop the
                 # frame and wait for the next keyframe at the new size.
                 continue
-            log.info("KVM resolution: %dx%d (decoded buffer %d B)",
-                     w, h, len(decoded))
+            log.info("KVM resolution: %dx%d (decoded buffer %d B)", w, h, len(decoded))
             fb = bytearray(decoded)
             fb_w, fb_h = w, h
         elif is_diff:
@@ -790,8 +817,9 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
             # framebuffer (300 KB) cost microseconds instead of the tens
             # of milliseconds a Python-level for-loop would.
             n = min(len(fb), len(decoded))
-            xored = (int.from_bytes(bytes(fb[:n]), "big")
-                     ^ int.from_bytes(decoded[:n], "big")).to_bytes(n, "big")
+            xored = (
+                int.from_bytes(bytes(fb[:n]), "big") ^ int.from_bytes(decoded[:n], "big")
+            ).to_bytes(n, "big")
             fb[:n] = xored
         else:
             fb[:] = decoded
@@ -809,7 +837,7 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
             #   HMM_KVM_ROW_ROTATE=off    — no rotation (default)
             #   HMM_KVM_ROW_ROTATE=always — force W/2 row rotation
             policy = os.environ.get("HMM_KVM_ROW_ROTATE", "off").lower()
-            do_rotate = (policy == "always")
+            do_rotate = policy == "always"
             if do_rotate:
                 half = fb_w // 2
                 rotated = bytearray(fb_w * fb_h)
@@ -836,8 +864,10 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
                 log.info(
                     "KVM perf (last 30 frames): decode=%.1fms xor+rotate=%.1fms"
                     " encode+yield=%.1fms total=%.1fms ⇒ ~%.1f fps max",
-                    perf_decode_ms / n_perf, perf_xor_ms / n_perf,
-                    perf_encode_ms / n_perf, perf_total_ms / n_perf,
+                    perf_decode_ms / n_perf,
+                    perf_xor_ms / n_perf,
+                    perf_encode_ms / n_perf,
+                    perf_total_ms / n_perf,
                     1000.0 / max(perf_total_ms / n_perf, 0.01),
                 )
                 n_perf = 0
@@ -847,9 +877,9 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
             continue
 
 
-def live_pngs(host: str, user: str, password: str, slot: int,
-              verify_tls: bool = False) -> Iterator[tuple[int, bytes]]:
+def live_pngs(
+    host: str, user: str, password: str, slot: int, verify_tls: bool = False
+) -> Iterator[tuple[int, bytes]]:
     """Backwards-compatible one-shot helper. Owns the cli lifetime."""
-    with open_live_session(host, user, password, slot,
-                           verify_tls=verify_tls) as cli:
+    with open_live_session(host, user, password, slot, verify_tls=verify_tls) as cli:
         yield from iter_pngs(cli)

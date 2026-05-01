@@ -29,6 +29,7 @@ Three layers, top-down:
 
 K1 only *classifies* tiles and reports stats — actual decoding is K2.
 """
+
 from __future__ import annotations
 
 import struct
@@ -49,8 +50,8 @@ class KvmFrame:
     offset: int
     body_len: int
     op: int
-    crc_wire: int     # CRC as it appears on wire (little-endian decode)
-    payload: bytes    # body[3:]
+    crc_wire: int  # CRC as it appears on wire (little-endian decode)
+    payload: bytes  # body[3:]
 
 
 def parse_kvm_stream(data: bytes) -> list[KvmFrame]:
@@ -71,23 +72,29 @@ def parse_kvm_stream(data: bytes) -> list[KvmFrame]:
             break
         crc_wire = struct.unpack("<H", body[:2])[0]
         op = body[2]
-        out.append(KvmFrame(
-            offset=pos, body_len=body_len, op=op,
-            crc_wire=crc_wire, payload=body[3:],
-        ))
+        out.append(
+            KvmFrame(
+                offset=pos,
+                body_len=body_len,
+                op=op,
+                crc_wire=crc_wire,
+                payload=body[3:],
+            )
+        )
         pos += 4 + body_len
     return out
 
 
 # --- layer 2: image reassembly ------------------------------------------------
 
+
 @dataclass
 class Image:
-    img_id: int            # 1-byte rolling counter
-    total_size: int        # bytes of encoded image data
+    img_id: int  # 1-byte rolling counter
+    total_size: int  # bytes of encoded image data
     width: int
     height: int
-    flags_tail: bytes      # leftover bytes of the init chunk header (debug)
+    flags_tail: bytes  # leftover bytes of the init chunk header (debug)
     data: bytearray = field(default_factory=bytearray)
 
     @property
@@ -126,7 +133,10 @@ def reassemble_images(frames: list[KvmFrame]) -> list[Image]:
             w = ((p[8] & 0x7F) << 8) | p[9]
             h = int.from_bytes(p[10:12], "big")
             images[img_id] = Image(
-                img_id=img_id, total_size=total, width=w, height=h,
+                img_id=img_id,
+                total_size=total,
+                width=w,
+                height=h,
                 flags_tail=bytes(p[12:18]),
             )
             chunks_by_id[img_id] = {}
@@ -148,14 +158,15 @@ def reassemble_images(frames: list[KvmFrame]) -> list[Image]:
 
 # --- layer 3: tile classification ---------------------------------------------
 
+
 @dataclass(frozen=True)
 class TileToken:
-    index: int          # tile index in reading order (0..N-1)
-    offset: int         # byte offset within the encoded image data
-    zip_type: int       # 0..7 (top 3 bits of first byte)
-    r_zip_type: int     # 0..7 (next 3 bits)
-    length: int         # bytes consumed from the stream by this tile
-    body: bytes         # raw bytes for this tile (including the type byte)
+    index: int  # tile index in reading order (0..N-1)
+    offset: int  # byte offset within the encoded image data
+    zip_type: int  # 0..7 (top 3 bits of first byte)
+    r_zip_type: int  # 0..7 (next 3 bits)
+    length: int  # bytes consumed from the stream by this tile
+    body: bytes  # raw bytes for this tile (including the type byte)
 
 
 JPEG_ZIP_TYPES = {2, 3}
@@ -185,15 +196,23 @@ def classify_tiles_jpeg_walk(image: Image) -> Iterator[TileToken]:
             if pos + tot > len(data):
                 return
             yield TileToken(
-                index=idx, offset=pos, zip_type=zt, r_zip_type=rt,
-                length=tot, body=data[pos:pos + tot],
+                index=idx,
+                offset=pos,
+                zip_type=zt,
+                r_zip_type=rt,
+                length=tot,
+                body=data[pos : pos + tot],
             )
             pos += tot
             idx += 1
         elif zt in COPY_ZIP_TYPES:
             yield TileToken(
-                index=idx, offset=pos, zip_type=zt, r_zip_type=rt,
-                length=1, body=data[pos:pos + 1],
+                index=idx,
+                offset=pos,
+                zip_type=zt,
+                r_zip_type=rt,
+                length=1,
+                body=data[pos : pos + 1],
             )
             pos += 1
             idx += 1

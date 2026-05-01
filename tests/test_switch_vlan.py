@@ -1,4 +1,5 @@
 """Tests for `hmm_client.switch.vlan` — VRP `display vlan` parser + diff."""
+
 from __future__ import annotations
 
 import pytest

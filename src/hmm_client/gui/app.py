@@ -6,6 +6,7 @@ HTMX-driven server-rendered HTML; Tailwind via CDN; Jinja2 templates.
 Run via `hmm gui` (CLI subcommand) or:
     uvicorn hmm_client.gui.app:app --host 127.0.0.1 --port 8765
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,8 +14,6 @@ import logging
 import os
 import threading
 import webbrowser
-
-_log = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,8 @@ from fastapi.templating import Jinja2Templates
 from .. import ops
 from ..config import Settings
 from ..snapshot import run_snapshot
+
+_log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -64,15 +65,19 @@ def index(request: Request) -> HTMLResponse:
         blades, switches = ops.list_inventory(s)
     except Exception as e:  # connection refused, TLS error, wrong host, etc.
         err = f"could not reach chassis at {s.hmm_host}: {e!s}"
-    return templates.TemplateResponse(request, "index.html", {
-        "blades": blades,
-        "switches": switches,
-        "host": s.hmm_host,
-        "default_host": Settings.load().hmm_host,
-        "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "tasks": list(_tasks.values()),
-        "inventory_error": err,
-    })
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "blades": blades,
+            "switches": switches,
+            "host": s.hmm_host,
+            "default_host": Settings.load().hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "tasks": list(_tasks.values()),
+            "inventory_error": err,
+        },
+    )
 
 
 @app.get("/api/iso/list")
@@ -83,8 +88,7 @@ def iso_list(dir: str = "") -> JSONResponse:
     set, else the user's home directory. The GUI binds to 127.0.0.1
     only; same-machine browsing is acceptable here.
     """
-    base = (dir.strip() or os.environ.get("HMM_ISO_DIR")
-            or str(Path.home()))
+    base = dir.strip() or os.environ.get("HMM_ISO_DIR") or str(Path.home())
     p = Path(base).expanduser()
     try:
         p = p.resolve(strict=True)
@@ -102,28 +106,27 @@ def iso_list(dir: str = "") -> JSONResponse:
                 if entry.is_dir():
                     dirs.append({"name": entry.name, "path": str(entry)})
                 elif entry.is_file() and entry.suffix.lower() in (".iso", ".img"):
-                    files.append({
-                        "name": entry.name,
-                        "path": str(entry),
-                        "size": entry.stat().st_size,
-                    })
+                    files.append(
+                        {
+                            "name": entry.name,
+                            "path": str(entry),
+                            "size": entry.stat().st_size,
+                        }
+                    )
             except OSError:
                 continue
     except PermissionError as e:
         raise HTTPException(403, str(e))
     parent = str(p.parent) if p.parent != p else None
-    return JSONResponse({"cwd": str(p), "parent": parent,
-                         "dirs": dirs, "files": files})
+    return JSONResponse({"cwd": str(p), "parent": parent, "dirs": dirs, "files": files})
 
 
 @app.post("/api/host")
 def set_host(request: Request, host: str = Form("")) -> JSONResponse:
     """Persist the active chassis host as a cookie. Empty resets to .env."""
-    response = JSONResponse({"ok": True,
-                             "host": host.strip() or Settings.load().hmm_host})
+    response = JSONResponse({"ok": True, "host": host.strip() or Settings.load().hmm_host})
     if host.strip():
-        response.set_cookie(_HOST_COOKIE, host.strip(),
-                            max_age=60 * 60 * 24 * 365, samesite="lax")
+        response.set_cookie(_HOST_COOKIE, host.strip(), max_age=60 * 60 * 24 * 365, samesite="lax")
     else:
         response.delete_cookie(_HOST_COOKIE)
     return response
@@ -133,9 +136,14 @@ def set_host(request: Request, host: str = Form("")) -> JSONResponse:
 def fragment_inventory(request: Request) -> HTMLResponse:
     s = _settings(request)
     blades, switches = ops.list_inventory(s)
-    return templates.TemplateResponse(request, "_grid.html", {
-        "blades": blades, "switches": switches,
-    })
+    return templates.TemplateResponse(
+        request,
+        "_grid.html",
+        {
+            "blades": blades,
+            "switches": switches,
+        },
+    )
 
 
 @app.get("/api/blade/{slot}/powerstate")
@@ -148,6 +156,7 @@ def blade_powerstate(request: Request, slot: int) -> JSONResponse:
     blocking the initial paint.
     """
     import time as _t
+
     s = _settings(request)
     key = (s.hmm_host, slot)
     now = _t.monotonic()
@@ -184,10 +193,15 @@ def boot(request: Request, slot: int, device: str, reboot: bool = False) -> JSON
     cycled = ""
     if reboot:
         cycled = ops.power(s, slot, "cycle")
-    return JSONResponse({
-        "ok": True, "slot": slot, "device": device,
-        "set_output": out, "cycle_output": cycled,
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "slot": slot,
+            "device": device,
+            "set_output": out,
+            "cycle_output": cycled,
+        }
+    )
 
 
 @app.post("/api/snapshot")
@@ -195,8 +209,12 @@ def snapshot_start(request: Request) -> JSONResponse:
     task_id = f"snap-{datetime.now(timezone.utc).strftime('%H%M%S')}"
     s = _settings(request)
     with _tasks_lock:
-        _tasks[task_id] = {"id": task_id, "kind": "snapshot",
-                           "host": s.hmm_host, "state": "running"}
+        _tasks[task_id] = {
+            "id": task_id,
+            "kind": "snapshot",
+            "host": s.hmm_host,
+            "state": "running",
+        }
 
     def _run() -> None:
         try:
@@ -227,15 +245,23 @@ def vmedia_mount(
     s = _settings(request)
     with _tasks_lock:
         _tasks[task_id] = {
-            "id": task_id, "kind": "vmedia", "slot": slot, "iso": iso_path,
-            "state": "running", "cancel": cancel_event,
+            "id": task_id,
+            "kind": "vmedia",
+            "slot": slot,
+            "iso": iso_path,
+            "state": "running",
+            "cancel": cancel_event,
         }
 
     def _run() -> None:
         try:
-            mount_iso(s, slot=slot, iso_path=iso_path,
-                      auto_hard_reset=hard_reset,
-                      on_idle=cancel_event.is_set)
+            mount_iso(
+                s,
+                slot=slot,
+                iso_path=iso_path,
+                auto_hard_reset=hard_reset,
+                on_idle=cancel_event.is_set,
+            )
             with _tasks_lock:
                 _tasks[task_id]["state"] = "ended"
         except Exception as e:
@@ -254,7 +280,10 @@ def sol_start(request: Request, slot: int, refresh: bool = True) -> JSONResponse
     s = _settings(request)
     with _tasks_lock:
         _tasks[task_id] = {
-            "id": task_id, "kind": "sol", "slot": slot, "state": "running",
+            "id": task_id,
+            "kind": "sol",
+            "slot": slot,
+            "state": "running",
         }
 
     def _run() -> None:
@@ -278,14 +307,11 @@ def sol_latest(slot: int) -> HTMLResponse:
     """Return the most recent finished SOL capture for a slot, or a status line."""
     with _tasks_lock:
         candidates = [
-            t for t in _tasks.values()
-            if t.get("kind") == "sol" and t.get("slot") == slot
+            t for t in _tasks.values() if t.get("kind") == "sol" and t.get("slot") == slot
         ]
     if not candidates:
         return HTMLResponse(
-            "<p class='text-xs text-slate-500'>"
-            "no SOL capture yet — click <em>Capture SOL</em>."
-            "</p>"
+            "<p class='text-xs text-slate-500'>no SOL capture yet — click <em>Capture SOL</em>.</p>"
         )
     last = candidates[-1]  # tasks dict is insertion-ordered
     state = last.get("state")
@@ -295,12 +321,11 @@ def sol_latest(slot: int) -> HTMLResponse:
             f" (~60-180s; refreshes automatically)</p>"
         )
     if state == "error":
-        return HTMLResponse(
-            f"<p class='text-xs text-rose-400'>✗ {last.get('error', 'error')}</p>"
-        )
+        return HTMLResponse(f"<p class='text-xs text-rose-400'>✗ {last.get('error', 'error')}</p>")
     text = last.get("sol_text", "(empty)")
     # escape & wrap in <pre>
     import html as _html
+
     return HTMLResponse(
         f"<div class='text-xs text-slate-400 mb-1'>"
         f"task {last['id']} — {len(text)} bytes</div>"
@@ -323,9 +348,14 @@ def kvm_start(slot: int) -> JSONResponse:
 @app.get("/kvm/{slot}", response_class=HTMLResponse)
 def kvm_canvas(request: Request, slot: int) -> HTMLResponse:
     """Full-screen KVM canvas — connects to /api/blade/{slot}/kvm/ws."""
-    return templates.TemplateResponse(request, "kvm.html", {
-        "slot": slot, "host": _settings(request).hmm_host,
-    })
+    return templates.TemplateResponse(
+        request,
+        "kvm.html",
+        {
+            "slot": slot,
+            "host": _settings(request).hmm_host,
+        },
+    )
 
 
 @app.websocket("/api/blade/{slot}/kvm/ws")
@@ -368,8 +398,9 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
         except Exception as e:
             log_msg = f"live handshake failed for slot {slot}: {e!s}"
             try:
-                await ws.send_json({"type": "info",
-                                    "message": log_msg + " — falling back to replay"})
+                await ws.send_json(
+                    {"type": "info", "message": log_msg + " — falling back to replay"}
+                )
             except Exception:
                 return
 
@@ -381,12 +412,16 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
             cap_env = str(default)
     if not cap_env or not Path(cap_env).exists():
         try:
-            await ws.send_json({
-                "type": "error",
-                "message": ("no replay capture configured and live failed; "
-                            "set HMM_KVM_REPLAY_CAPTURE=/path/to/stream.bin "
-                            "or drop a .bin into ./captures/."),
-            })
+            await ws.send_json(
+                {
+                    "type": "error",
+                    "message": (
+                        "no replay capture configured and live failed; "
+                        "set HMM_KVM_REPLAY_CAPTURE=/path/to/stream.bin "
+                        "or drop a .bin into ./captures/."
+                    ),
+                }
+            )
             await ws.close()
         except Exception:
             pass
@@ -396,19 +431,19 @@ async def kvm_ws(ws: WebSocket, slot: int) -> None:
 
     frame_delay = float(os.environ.get("HMM_KVM_REPLAY_FPS_DELAY", "0.5"))
     try:
-        await ws.send_json({"type": "info",
-                            "message": f"replay slot={slot} src={cap_env}"})
+        await ws.send_json({"type": "info", "message": f"replay slot={slot} src={cap_env}"})
         while True:
             frames_sent = 0
             for img_id, png in replay_capture_to_pngs(cap_env):
-                await ws.send_json({"type": "frame", "img_id": img_id,
-                                    "size": len(png), "source": "replay"})
+                await ws.send_json(
+                    {"type": "frame", "img_id": img_id, "size": len(png), "source": "replay"}
+                )
                 await ws.send_bytes(png)
                 frames_sent += 1
                 await asyncio.sleep(frame_delay)
-            await ws.send_json({"type": "info",
-                                "message": f"replay loop done "
-                                           f"({frames_sent} frames); restarting"})
+            await ws.send_json(
+                {"type": "info", "message": f"replay loop done ({frames_sent} frames); restarting"}
+            )
             await asyncio.sleep(1.0)
     except WebSocketDisconnect:
         return
@@ -430,8 +465,9 @@ def _settings_from_ws(ws: WebSocket) -> Settings:
     return Settings.load(host_override=host)
 
 
-async def _stream_live(ws: WebSocket, s: Settings, slot: int,
-                        *, use_newrle: bool | None = None) -> None:
+async def _stream_live(
+    ws: WebSocket, s: Settings, slot: int, *, use_newrle: bool | None = None
+) -> None:
     """Run the live KVM handshake, push decoded PNGs out and accept
     keyboard/mouse input from the browser.
 
@@ -448,13 +484,21 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int,
     from ..kvm.client import iter_pngs, open_live_session
 
     loop = asyncio.get_running_loop()
-    await ws.send_json({"type": "info",
-                        "message": f"live: connecting host={s.hmm_host} slot={slot}"})
+    await ws.send_json(
+        {"type": "info", "message": f"live: connecting host={s.hmm_host} slot={slot}"}
+    )
 
     cli = await loop.run_in_executor(
-        None, lambda: open_live_session(s.hmm_host, s.hmm_user, s.hmm_password,
-                                        slot, verify_tls=s.verify_tls,
-                                        use_newrle=use_newrle))
+        None,
+        lambda: open_live_session(
+            s.hmm_host,
+            s.hmm_user,
+            s.hmm_password,
+            slot,
+            verify_tls=s.verify_tls,
+            use_newrle=use_newrle,
+        ),
+    )
 
     # Coalescing slot: the decoder thread pumps frames at chassis speed
     # (~30 fps) and keeps overwriting `latest` with the freshest one.
@@ -485,8 +529,7 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int,
             latest[0] = None
             if item is None:
                 if decoder_done:
-                    await ws.send_json({"type": "info",
-                                        "message": "live stream ended"})
+                    await ws.send_json({"type": "info", "message": "live stream ended"})
                     return
                 continue
             img_id, png = item
@@ -496,9 +539,16 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int,
             if len(png) >= 24 and png[:8] == b"\x89PNG\r\n\x1a\n":
                 w = int.from_bytes(png[16:20], "big")
                 h = int.from_bytes(png[20:24], "big")
-            await ws.send_json({"type": "frame", "img_id": img_id,
-                                "size": len(png), "source": "live",
-                                "w": w, "h": h})
+            await ws.send_json(
+                {
+                    "type": "frame",
+                    "img_id": img_id,
+                    "size": len(png),
+                    "source": "live",
+                    "w": w,
+                    "h": h,
+                }
+            )
             await ws.send_bytes(png)
 
     async def _input_pump() -> None:
@@ -507,8 +557,7 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int,
             try:
                 msg = _parse_input_msg(text)
             except ValueError as e:
-                await ws.send_json({"type": "info",
-                                    "message": f"bad input msg: {e}"})
+                await ws.send_json({"type": "info", "message": f"bad input msg: {e}"})
                 continue
             if msg is None:
                 continue
@@ -516,31 +565,33 @@ async def _stream_live(ws: WebSocket, s: Settings, slot: int,
             try:
                 if kind == "key":
                     await loop.run_in_executor(
-                        None, lambda r=args["report"]: cli.send_key_report(r))
+                        None, lambda r=args["report"]: cli.send_key_report(r)
+                    )
                 elif kind == "mouse":
                     await loop.run_in_executor(
-                        None, lambda a=args: cli.send_mouse_abs(
-                            a["x"], a["y"], a["buttons"], a.get("wheel", 0)))
+                        None,
+                        lambda a=args: cli.send_mouse_abs(
+                            a["x"], a["y"], a["buttons"], a.get("wheel", 0)
+                        ),
+                    )
             except OSError as e:
-                await ws.send_json({"type": "info",
-                                    "message": f"input send failed: {e}"})
+                await ws.send_json({"type": "info", "message": f"input send failed: {e}"})
                 return
 
     frame_task = asyncio.create_task(_frame_pump())
     input_task = asyncio.create_task(_input_pump())
     try:
         done, pending = await asyncio.wait(
-            {frame_task, input_task}, return_when=asyncio.FIRST_COMPLETED)
+            {frame_task, input_task}, return_when=asyncio.FIRST_COMPLETED
+        )
         for t in pending:
             t.cancel()
         for t in done:
             exc = t.exception()
             if exc and not isinstance(exc, WebSocketDisconnect):
-                _log.warning("KVM WS slot=%s task ended with %r",
-                             slot, exc, exc_info=exc)
+                _log.warning("KVM WS slot=%s task ended with %r", slot, exc, exc_info=exc)
             else:
-                _log.info("KVM WS slot=%s task ended cleanly (decoder_done=%s)",
-                          slot, decoder_done)
+                _log.info("KVM WS slot=%s task ended cleanly (decoder_done=%s)", slot, decoder_done)
     finally:
         await loop.run_in_executor(None, cli.close)
         _log.info("KVM WS slot=%s session closed", slot)
@@ -554,6 +605,7 @@ def _parse_input_msg(text: str) -> tuple[str, dict[str, Any]] | None:
       `{type:"mouse", x:0..3000, y:0..3000, buttons:0..7, wheel:-128..127}`
     """
     import json
+
     msg = json.loads(text)
     kind = msg.get("type")
     if kind == "key":
@@ -565,7 +617,8 @@ def _parse_input_msg(text: str) -> tuple[str, dict[str, Any]] | None:
         return "key", {"report": bytes(report)}
     if kind == "mouse":
         try:
-            x = int(msg["x"]); y = int(msg["y"])
+            x = int(msg["x"])
+            y = int(msg["y"])
             buttons = int(msg["buttons"])
         except (KeyError, TypeError, ValueError) as e:
             raise ValueError(f"mouse missing field: {e}")
@@ -573,14 +626,14 @@ def _parse_input_msg(text: str) -> tuple[str, dict[str, Any]] | None:
         x = max(0, min(0xFFFF, x))
         y = max(0, min(0xFFFF, y))
         wheel = max(-128, min(127, wheel)) & 0xFF
-        return "mouse", {"x": x, "y": y, "buttons": buttons & 0xFF,
-                         "wheel": wheel}
+        return "mouse", {"x": x, "y": y, "buttons": buttons & 0xFF, "wheel": wheel}
     return None
 
 
 @app.post("/api/vmedia/{slot}/release")
 def vmedia_release(request: Request, slot: int, hard: bool = False) -> JSONResponse:
     from ..vmedia.client import force_release_vmedia
+
     force_release_vmedia(_settings(request), slot, hard_reset=hard)
     return JSONResponse({"ok": True, "slot": slot})
 
@@ -600,14 +653,13 @@ def task_cancel(task_id: str) -> JSONResponse:
 
 @app.get("/api/tasks", response_class=HTMLResponse)
 def fragment_tasks(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request, "_tasks.html", {"tasks": list(_tasks.values())}
-    )
+    return templates.TemplateResponse(request, "_tasks.html", {"tasks": list(_tasks.values())})
 
 
 def run(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
     """Boot uvicorn; optionally open the browser."""
     import uvicorn
+
     if open_browser:
         url = f"http://{host}:{port}/"
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()

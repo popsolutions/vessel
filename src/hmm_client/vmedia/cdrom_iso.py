@@ -3,6 +3,7 @@
 Memory-maps an .iso file and serves 2048-byte sectors. Implements the
 `IsoBacking` Protocol from `sff8020i.py`.
 """
+
 from __future__ import annotations
 
 import mmap
@@ -60,4 +61,4 @@ class IsoFileBacking:
             return b"\x00" * (count * CDROM_BLOCK_SIZE)
         if end <= self._size:
             return bytes(self._mm[start:end])
-        return bytes(self._mm[start:self._size]) + b"\x00" * (end - self._size)
+        return bytes(self._mm[start : self._size]) + b"\x00" * (end - self._size)

@@ -24,11 +24,11 @@ The chassis NewRLE codec uses one of two pixel encodings per tile:
 Both produce 64×64 PIL.Image objects that the renderer pastes into
 the full-frame buffer at the tile's (x, y) origin.
 """
+
 from __future__ import annotations
 
 import io
 import logging
-import struct
 
 from PIL import Image
 
@@ -53,18 +53,16 @@ def palette_image(
     in the supplied palette into the matching 24-bit RGB triple.
     """
     if len(pixels) < width * height:
-        raise ValueError(
-            f"pixels too short for {width}x{height}: got {len(pixels)}"
-        )
+        raise ValueError(f"pixels too short for {width}x{height}: got {len(pixels)}")
 
     rgb_palette = bytearray(768)
     for i, bgr233 in enumerate(palette_bgr233[:256]):
         r, g, b = bgr233_to_rgb888(bgr233)
-        rgb_palette[i * 3]     = r
+        rgb_palette[i * 3] = r
         rgb_palette[i * 3 + 1] = g
         rgb_palette[i * 3 + 2] = b
 
-    img = Image.frombytes("P", (width, height), bytes(pixels[:width * height]))
+    img = Image.frombytes("P", (width, height), bytes(pixels[: width * height]))
     img.putpalette(bytes(rgb_palette))
     return img.convert("RGB")
 
@@ -87,7 +85,8 @@ def jpeg_decode_as_image(jpeg_body: bytes) -> Image.Image:
     except Exception as exc:
         log.warning(
             "JPEG tile decode failed (body=%d bytes): %s",
-            len(jpeg_body), exc,
+            len(jpeg_body),
+            exc,
         )
         return Image.new("RGB", (TILE_SIZE, TILE_SIZE), color=(64, 64, 64))
 
@@ -111,15 +110,13 @@ def create_rle_img(
     PIL "RGB" mode bytes, three per pixel, in row-major order.
     """
     if len(int_pixels) < width * height:
-        raise ValueError(
-            f"int_pixels too short for {width}x{height}: got {len(int_pixels)}"
-        )
+        raise ValueError(f"int_pixels too short for {width}x{height}: got {len(int_pixels)}")
     buf = bytearray(width * height * 3)
     for idx in range(width * height):
         v = int_pixels[idx]
-        buf[idx * 3]     = (v >> 16) & 0xFF   # R
-        buf[idx * 3 + 1] = (v >>  8) & 0xFF   # G
-        buf[idx * 3 + 2] =  v        & 0xFF   # B
+        buf[idx * 3] = (v >> 16) & 0xFF  # R
+        buf[idx * 3 + 1] = (v >> 8) & 0xFF  # G
+        buf[idx * 3 + 2] = v & 0xFF  # B
     return Image.frombytes("RGB", (width, height), bytes(buf))
 
 
@@ -136,13 +133,11 @@ def create_rle_img_bgr233(
     live `decodeRLEorJPEG1` path uses `create_rle_img()` instead.
     """
     if len(byte_pixels) < width * height:
-        raise ValueError(
-            f"byte_pixels too short for {width}x{height}: got {len(byte_pixels)}"
-        )
+        raise ValueError(f"byte_pixels too short for {width}x{height}: got {len(byte_pixels)}")
     buf = bytearray(width * height * 3)
     for idx in range(width * height):
         r, g, b = bgr233_to_rgb888(byte_pixels[idx])
-        buf[idx * 3]     = r
+        buf[idx * 3] = r
         buf[idx * 3 + 1] = g
         buf[idx * 3 + 2] = b
     return Image.frombytes("RGB", (width, height), bytes(buf))

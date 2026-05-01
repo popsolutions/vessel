@@ -11,6 +11,7 @@ issue (depends on direct VRP CLI access via Phase 3).
 Usage:
     python -m hmm_client.restore snapshots/<UTC-stamp>
 """
+
 from __future__ import annotations
 
 import json
@@ -119,7 +120,8 @@ def detect_drift(snapshot_dir: Path, settings: Settings | None = None) -> int:
                 same += 1
 
     table = Table(title=f"Summary ({len(redfish_files)} resources)")
-    table.add_column("kind"); table.add_column("count", justify="right")
+    table.add_column("kind")
+    table.add_column("count", justify="right")
     table.add_row("[green]unchanged[/]", str(same))
     table.add_row("[yellow]drifted[/]", str(len(drifted)))
     table.add_row("[red]errors[/]", str(len(errors)))

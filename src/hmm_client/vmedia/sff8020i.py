@@ -12,6 +12,7 @@ proto.py 12-byte header has its own length field). Wrap with proto.pack_header
 This module is stateless about the disc — pass an `IsoBacking` from
 `cdrom_iso.py` for read operations.
 """
+
 from __future__ import annotations
 
 import struct
@@ -117,11 +118,13 @@ def make_read_toc_response(lba_count: int, msf: bool = False, format_: int = 0) 
     last_track = 0xAA
     track1_ctrl = 0x14  # ADR=1 (CDROM), CTRL=4 (data)
     if msf:
+
         def to_msf(lba: int) -> bytes:
             f = lba % 75
             s = (lba // 75) % 60
             m = lba // 75 // 60
             return bytes([0, m, s, f])
+
         track_data = bytes([0, track1_ctrl, 1, 0]) + to_msf(0)
         leadout = bytes([0, 0x14, last_track, 0]) + to_msf(lba_count)
     else:

@@ -1,4 +1,5 @@
 """Tests for `hmm_client.kvm_core.decoder.jpeg_data` synthetic JPEG header."""
+
 from __future__ import annotations
 
 import pytest

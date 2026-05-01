@@ -1,4 +1,5 @@
 """Tests for `hmm_client.notify` — Telegram notification sink."""
+
 from __future__ import annotations
 
 import pytest
@@ -72,6 +73,7 @@ class TestNotifyTelegramSend:
             return _FakeResponse()
 
         import hmm_client.notify as mod
+
         monkeypatch.setattr(mod.httpx, "post", fake_post)
 
         ok = notify_telegram("hello", level="ok")
@@ -94,6 +96,7 @@ class TestNotifyTelegramSend:
             return _FailResp()
 
         import hmm_client.notify as mod
+
         monkeypatch.setattr(mod.httpx, "post", fake_post)
         assert notify_telegram("test") is False
 
@@ -107,6 +110,7 @@ class TestNotifyTelegramSend:
             raise httpx.ConnectError("network down")
 
         import hmm_client.notify as mod
+
         monkeypatch.setattr(mod.httpx, "post", boom)
         # Must NOT raise — failure to notify can never break the caller
         assert notify_telegram("test") is False
@@ -126,6 +130,7 @@ class TestNotifyTelegramSend:
             return _OK()
 
         import hmm_client.notify as mod
+
         monkeypatch.setattr(mod.httpx, "post", fake_post)
         notify_telegram("x" * 5000)
         assert len(captured["text"]) <= 4001

@@ -6,6 +6,7 @@ firmware). We reach the iBMC by SSH-jumping through the HMM:
 
     workstation --ssh--> HMM --ssh root@172.31.1.<128+slot>--> iBMC
 """
+
 from __future__ import annotations
 
 import re
@@ -23,7 +24,7 @@ from .redfish import RedfishClient
 POWER_VALUES = {"off": "0", "on": "1"}
 RESET_VALUES = {"reset": "0", "cycle": "2", "nmi": "3"}
 BOOT_DEVICES = {
-    "none": "0",     # No override (use default order)
+    "none": "0",  # No override (use default order)
     "pxe": "1",
     "hdd": "2",
     "cd": "5",
@@ -121,9 +122,7 @@ def power(settings: Settings, slot: int, action: str) -> str:
 
 def set_boot_device(settings: Settings, slot: int, device: str) -> str:
     if device not in BOOT_DEVICES:
-        raise ValueError(
-            f"unknown boot device: {device!r} (want one of {list(BOOT_DEVICES)})"
-        )
+        raise ValueError(f"unknown boot device: {device!r} (want one of {list(BOOT_DEVICES)})")
     with IBMCSession(settings, slot) as ibmc:
         return ibmc.run(f"ipmcset -d bootdevice -v {BOOT_DEVICES[device]}")
 
@@ -202,7 +201,7 @@ def _strip_echo(out: str, command: str) -> str:
     """Drop the leading line-echo + trailing prompt that the dispatcher prints."""
     text = out.replace("\r\n", "\n")
     if text.startswith(command):
-        text = text[len(command):].lstrip("\n")
+        text = text[len(command) :].lstrip("\n")
     # trim trailing prompt(s) like "root@BMC:/#"
     lines = text.splitlines()
     while lines and re.match(r"^root@\w+:/#\s*$", lines[-1].strip()):
@@ -213,7 +212,9 @@ def _strip_echo(out: str, command: str) -> str:
 def _inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """One Redfish session, parallel GETs of every Chassis member."""
     with RedfishClient(
-        settings.hmm_host, settings.hmm_user, settings.hmm_password,
+        settings.hmm_host,
+        settings.hmm_user,
+        settings.hmm_password,
         verify=settings.verify_tls,
     ) as rf:
         coll = rf.get("/redfish/v1/Chassis")
@@ -226,20 +227,27 @@ def _inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[str,
     for doc in docs:
         id_ = doc.get("Id", "")
         state = (doc.get("Status") or {}).get("State", "?")
-        if (m := re.match(r"Blade(\d+)$", id_)):
+        if m := re.match(r"Blade(\d+)$", id_):
             slot = int(m.group(1))
-            blades.append({
-                "slot": slot, "model": doc.get("Model", "-"),
-                "state": state, "ibmc_ip": ibmc_ip_for_slot(slot),
-            })
-        elif (m := re.match(r"Swi(\d+)$", id_)):
+            blades.append(
+                {
+                    "slot": slot,
+                    "model": doc.get("Model", "-"),
+                    "state": state,
+                    "ibmc_ip": ibmc_ip_for_slot(slot),
+                }
+            )
+        elif m := re.match(r"Swi(\d+)$", id_):
             slot = int(m.group(1))
-            switches.append({
-                "slot": slot, "model": doc.get("Model", "-"),
-                "state": state, "mgmt_ip": f"172.31.1.{160 + slot}",
-            })
-    return (sorted(blades, key=lambda b: b["slot"]),
-            sorted(switches, key=lambda s: s["slot"]))
+            switches.append(
+                {
+                    "slot": slot,
+                    "model": doc.get("Model", "-"),
+                    "state": state,
+                    "mgmt_ip": f"172.31.1.{160 + slot}",
+                }
+            )
+    return (sorted(blades, key=lambda b: b["slot"]), sorted(switches, key=lambda s: s["slot"]))
 
 
 def list_blades(settings: Settings) -> list[dict[str, Any]]:
@@ -258,7 +266,9 @@ def list_inventory(settings: Settings) -> tuple[list[dict[str, Any]], list[dict[
 def list_sessions(settings: Settings) -> list[dict[str, Any]]:
     """List all active Redfish sessions on the HMM."""
     with RedfishClient(
-        settings.hmm_host, settings.hmm_user, settings.hmm_password,
+        settings.hmm_host,
+        settings.hmm_user,
+        settings.hmm_password,
         verify=settings.verify_tls,
     ) as rf:
         coll = rf.get("/redfish/v1/SessionService/Sessions")
@@ -266,12 +276,14 @@ def list_sessions(settings: Settings) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for ref in rf.members(coll):
             d = rf.get(ref)
-            out.append({
-                "url": ref,
-                "id": d.get("Id"),
-                "user": d.get("UserName"),
-                "is_mine": ref == my_url,
-            })
+            out.append(
+                {
+                    "url": ref,
+                    "id": d.get("Id"),
+                    "user": d.get("UserName"),
+                    "is_mine": ref == my_url,
+                }
+            )
     return out
 
 
@@ -281,7 +293,9 @@ def cleanup_sessions(settings: Settings) -> int:
     """
     deleted = 0
     with RedfishClient(
-        settings.hmm_host, settings.hmm_user, settings.hmm_password,
+        settings.hmm_host,
+        settings.hmm_user,
+        settings.hmm_password,
         verify=settings.verify_tls,
     ) as rf:
         coll = rf.get("/redfish/v1/SessionService/Sessions")

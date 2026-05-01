@@ -12,6 +12,7 @@ boundary (manual padding because the Java cipher is configured with
 `AES/CBC/NOPadding`), encrypt, and return the ciphertext. Output length
 is always a multiple of 16.
 """
+
 from __future__ import annotations
 
 from cryptography.hazmat.primitives import hashes
@@ -24,8 +25,7 @@ DEFAULT_SALT: bytes = bytes(16)
 # `static final byte[] encrypt = {1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8};`
 # Java mutates encrypt[0..3] each call to embed the codekey int — we do
 # the same in `encry()` below by building a fresh key per call.
-DEFAULT_ENCRYPT_KEY: bytes = bytes([1, 2, 3, 4, 5, 6, 7, 8,
-                                    1, 2, 3, 4, 5, 6, 7, 8])
+DEFAULT_ENCRYPT_KEY: bytes = bytes([1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8])
 DEFAULT_ITERATIONS: int = 5000
 
 
@@ -56,10 +56,10 @@ def aes_cbc_128_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
 def encry_bytes(src: bytes, kbd_key: bytes, kbd_iv: bytes, length: int) -> bytes:
     """Java's `AESHandler.encry_bytes` — Linux/encrypted-status path.
 
-        int srcLen = ((len + 15) / 16) * 16;
-        byte[] tem_src = new byte[srcLen];
-        System.arraycopy(src, 0, tem_src, 0, len);
-        return aes_cbc_128_encrypt(tem_src, kbdKey, kbdIV);
+    int srcLen = ((len + 15) / 16) * 16;
+    byte[] tem_src = new byte[srcLen];
+    System.arraycopy(src, 0, tem_src, 0, len);
+    return aes_cbc_128_encrypt(tem_src, kbdKey, kbdIV);
     """
     if length <= 0 or src is None:
         raise ValueError(f"length must be > 0, got {length}")
@@ -71,12 +71,12 @@ def encry_bytes(src: bytes, kbd_key: bytes, kbd_iv: bytes, length: int) -> bytes
 def encry(src: bytes, codekey: int, length: int) -> bytes:
     """Java's `AESHandler.encry` — Windows path.
 
-        encrypt[0] = (byte) (codekey >> 24);
-        encrypt[1] = (byte) (codekey >> 16);
-        encrypt[2] = (byte) (codekey >> 8);
-        encrypt[3] = (byte) codekey;
-        // encrypt = [codekey_be_4B, 5,6,7,8,1,2,3,4,5,6,7,8]
-        return aes_cbc_128_encrypt(tem_src, encrypt, iv=zeros);
+    encrypt[0] = (byte) (codekey >> 24);
+    encrypt[1] = (byte) (codekey >> 16);
+    encrypt[2] = (byte) (codekey >> 8);
+    encrypt[3] = (byte) codekey;
+    // encrypt = [codekey_be_4B, 5,6,7,8,1,2,3,4,5,6,7,8]
+    return aes_cbc_128_encrypt(tem_src, encrypt, iv=zeros);
     """
     if length <= 0 or src is None:
         raise ValueError(f"length must be > 0, got {length}")
@@ -93,10 +93,13 @@ def encry(src: bytes, codekey: int, length: int) -> bytes:
     return aes_cbc_128_encrypt(padded, bytes(key), DEFAULT_IV)
 
 
-def generate_stored_password_hash(plain: str | bytes, pass_len: int,
-                                  rand_salt: bytes | None = None,
-                                  hmac: str = "PBKDF2WithHmacSHA1",
-                                  iterations: int = DEFAULT_ITERATIONS) -> bytes:
+def generate_stored_password_hash(
+    plain: str | bytes,
+    pass_len: int,
+    rand_salt: bytes | None = None,
+    hmac: str = "PBKDF2WithHmacSHA1",
+    iterations: int = DEFAULT_ITERATIONS,
+) -> bytes:
     """Port of `generateStoredPasswordHash(char[], int, byte[], String, int)`.
 
     Java:
@@ -122,6 +125,5 @@ def generate_stored_password_hash(plain: str | bytes, pass_len: int,
         algo = hashes.SHA256()
     else:
         raise ValueError(f"unsupported hmac {hmac!r}")
-    kdf = PBKDF2HMAC(algorithm=algo, length=pass_len, salt=salt,
-                     iterations=iterations)
+    kdf = PBKDF2HMAC(algorithm=algo, length=pass_len, salt=salt, iterations=iterations)
     return kdf.derive(password)

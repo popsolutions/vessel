@@ -9,6 +9,7 @@ sub-code on op=ACK; byte 3 is the per-stream sequence id; bytes 4-11 are
 the trans-field (length / offset depending on op). Heartbeat is just the
 12-byte header with op=6, no body.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ class OpCode(IntEnum):
     CLOSE_VM = 5
     HEARTBIT = 6
     SHUTDOWN = 7
-    MIC_FILE_CMD = 0xFC          # Java: -4
+    MIC_FILE_CMD = 0xFC  # Java: -4
     CONSOLE_PRINT_CONTROLLER = 0xF0  # Java: -16
     SFF_COMMAND_COMPLETE = 0xFF  # Java: -1
     UFI_COMMAND_COMPLETE = 0xFE  # Java: -2
@@ -51,7 +52,7 @@ class AckCode(IntEnum):
     CLOSE_UPDATA = 34
     CLOSE_IPCONFIG = 35
     MIC_SENT = 36
-    CN_EXIST = 49     # "connection exists" — vmedia session already active for this blade
+    CN_EXIST = 49  # "connection exists" — vmedia session already active for this blade
 
 
 class DeviceType(IntEnum):
@@ -72,7 +73,7 @@ class CloseReason(IntEnum):
 
 # Sub-types in lower nibble of byte 1 for UFI/SFF data
 SUB_COMMAND = 0  # CDB
-SUB_DATA = 1     # data after CDB
+SUB_DATA = 1  # data after CDB
 SUB_END = 3
 SUB_CMD_OK = 0
 SUB_CMD_FAIL = 1

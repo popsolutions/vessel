@@ -65,10 +65,14 @@ When this tile inherits its palette from an earlier tile (outer rZipType
 palette-byte count — the decoder reuses the prior palette in-place
 (with optional swap for rZipType 5/7).
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from PIL import Image  # noqa: F401  (used in string forward refs)
 
 from .color_converter import ycbcr2rgb
 from .image_block import ImageBlock
@@ -82,11 +86,11 @@ from .image_creater import (
 log = logging.getLogger(__name__)
 
 
-_TILE_PIXELS = TILE_SIZE * TILE_SIZE   # 4096
+_TILE_PIXELS = TILE_SIZE * TILE_SIZE  # 4096
 
 # Java's `Base.USB_KEY_CTRL = 224 = 0xE0` — top-3-bits mask.
 _ZIPTYPE_MASK = 0xE0
-_RZIPTYPE_MASK = 0x1C   # bits 4..2
+_RZIPTYPE_MASK = 0x1C  # bits 4..2
 
 
 class DecoderError(RuntimeError):
@@ -117,21 +121,11 @@ class NewRleDecoder:
     def _init(self, image_width: int, image_height: int) -> None:
         self.image_width = image_width
         self.image_height = image_height
-        self.block_x_count = (
-            image_width // TILE_SIZE
-            + (0 if image_width % TILE_SIZE == 0 else 1)
-        )
-        self.block_y_count = (
-            image_height // TILE_SIZE
-            + (0 if image_height % TILE_SIZE == 0 else 1)
-        )
+        self.block_x_count = image_width // TILE_SIZE + (0 if image_width % TILE_SIZE == 0 else 1)
+        self.block_y_count = image_height // TILE_SIZE + (0 if image_height % TILE_SIZE == 0 else 1)
         self.block_count = self.block_x_count * self.block_y_count
-        self.block_cut_width = TILE_SIZE - (
-            self.block_x_count * TILE_SIZE - image_width
-        )
-        self.block_cut_height = TILE_SIZE - (
-            self.block_y_count * TILE_SIZE - image_height
-        )
+        self.block_cut_width = TILE_SIZE - (self.block_x_count * TILE_SIZE - image_width)
+        self.block_cut_height = TILE_SIZE - (self.block_y_count * TILE_SIZE - image_height)
         self.image_blocks: list[ImageBlock | None] = [None] * self.block_count
 
     # ------------------------------------------------------------------
@@ -152,7 +146,7 @@ class NewRleDecoder:
         if self.image_width != image_width or self.image_height != image_height:
             self._init(image_width, image_height)
 
-        i = 1   # Java starts at i=1 — skip the leading zero preamble
+        i = 1  # Java starts at i=1 — skip the leading zero preamble
         blocknum = 0
         end = len(payload)
 
@@ -169,13 +163,17 @@ class NewRleDecoder:
             except DecoderError as exc:
                 log.warning(
                     "tile decode error at block %d (i=%d): %s",
-                    blocknum, i2, exc,
+                    blocknum,
+                    i2,
+                    exc,
                 )
                 return list(self.image_blocks)
             except IndexError as exc:
                 log.warning(
                     "tile read out of bounds at block %d (i=%d): %s",
-                    blocknum, i2, exc,
+                    blocknum,
+                    i2,
+                    exc,
                 )
                 return list(self.image_blocks)
 
@@ -249,9 +247,7 @@ class NewRleDecoder:
                 self.image_blocks[blocknum] = block
                 return 1, block
             pix_colors = bytes(prev.pix_colors)
-            syclen, block = self._decode_rle(
-                payload, i2, blocknum, prev.block_rle_type, pix_colors
-            )
+            syclen, block = self._decode_rle(payload, i2, blocknum, prev.block_rle_type, pix_colors)
             self.image_blocks[blocknum] = block
             return syclen, block
 
@@ -285,9 +281,7 @@ class NewRleDecoder:
                 self.image_blocks[blocknum] = block
                 return 1, block
             pix_colors = bytes(prev.pix_colors)
-            syclen, block = self._decode_rle(
-                payload, i2, blocknum, prev.block_rle_type, pix_colors
-            )
+            syclen, block = self._decode_rle(payload, i2, blocknum, prev.block_rle_type, pix_colors)
             self.image_blocks[blocknum] = block
             return syclen, block
 
@@ -333,14 +327,10 @@ class NewRleDecoder:
         source_index: int,
     ) -> ImageBlock | None:
         if source_index < 0 or source_index >= self.block_count:
-            raise DecoderError(
-                f"copy block source out of range: src={source_index}"
-            )
+            raise DecoderError(f"copy block source out of range: src={source_index}")
         src = self.image_blocks[source_index]
         if src is None:
-            raise DecoderError(
-                f"copy block source not yet decoded: src={source_index}"
-            )
+            raise DecoderError(f"copy block source not yet decoded: src={source_index}")
         block = ImageBlock()
         block.clone_metadata_from(src)
         block.image = src.image
@@ -387,11 +377,20 @@ class NewRleDecoder:
             image_data, syclen = self._decode_rle_type0(butPixColors, src_col_pos)
         elif rle_type == 1:
             image_data, syclen = self._decode_rle_type1(
-                payload, src_pos, butPixColors, src_col_pos, coefficient,
+                payload,
+                src_pos,
+                butPixColors,
+                src_col_pos,
+                coefficient,
             )
         elif rle_type in (2, 3):
             image_data, syclen = self._decode_rle_type23(
-                payload, src_pos, butPixColors, src_col_pos, coefficient, rle_type,
+                payload,
+                src_pos,
+                butPixColors,
+                src_col_pos,
+                coefficient,
+                rle_type,
             )
         else:
             raise DecoderError(f"decodeRle type {rle_type} not supported")
@@ -491,7 +490,8 @@ class NewRleDecoder:
         if sub_syclen != _TILE_PIXELS:
             log.debug(
                 "RLE type 1 mismatch: sub_syclen=%d vs %d",
-                sub_syclen, _TILE_PIXELS,
+                sub_syclen,
+                _TILE_PIXELS,
             )
 
         syclen = 3 + (6 * coefficient) + length
@@ -507,7 +507,7 @@ class NewRleDecoder:
         rle_type: int,
     ) -> tuple[list[int], int]:
         """3- or 4-colour palette RLE — byte stream of 6-bit run + 2-bit index."""
-        index_type = 4 if rle_type == 3 else 3   # type 2 → 3 colours, type 3 → 4
+        index_type = 4 if rle_type == 3 else 3  # type 2 → 3 colours, type 3 → 4
         palette_bytes = index_type * 3
         # Java doesn't bounds-check the palette — short reads either
         # roll over the next bytes or trip ArrayIndexOutOfBoundsException
@@ -517,7 +517,9 @@ class NewRleDecoder:
         if src_col_pos + palette_bytes > len(palette):
             log.debug(
                 "type %d palette short (%d < %d) — padding with zeros",
-                rle_type, len(palette), palette_bytes,
+                rle_type,
+                len(palette),
+                palette_bytes,
             )
             palette = palette + b"\x00" * (src_col_pos + palette_bytes - len(palette))
         temcolor = [
@@ -553,7 +555,9 @@ class NewRleDecoder:
         if sub_syclen != _TILE_PIXELS:
             log.debug(
                 "RLE type %d mismatch: sub_syclen=%d vs %d",
-                rle_type, sub_syclen, _TILE_PIXELS,
+                rle_type,
+                sub_syclen,
+                _TILE_PIXELS,
             )
 
         syclen = 3 + (palette_bytes * coefficient) + length

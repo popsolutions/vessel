@@ -9,6 +9,7 @@ Subcommands:
   hmm snapshot                      backup HMM + switches -> snapshots/<stamp>/
   hmm drift <snapshot-dir>          compare snapshot vs live
 """
+
 from __future__ import annotations
 
 import typer
@@ -86,8 +87,10 @@ def boot(
     """Set one-shot boot device override for a blade."""
     s = Settings.load()
     ip = ops.ibmc_ip_for_slot(slot)
-    console.print(f"[yellow]slot=[/] {slot}  [yellow]iBMC=[/] {ip}  [yellow]device=[/] {device}"
-                  + ("  [yellow]+power-cycle[/]" if reboot else ""))
+    console.print(
+        f"[yellow]slot=[/] {slot}  [yellow]iBMC=[/] {ip}  [yellow]device=[/] {device}"
+        + ("  [yellow]+power-cycle[/]" if reboot else "")
+    )
     if not yes and (reboot or device != "none"):
         if not typer.confirm("apply?", default=False):
             raise typer.Exit(1)
@@ -120,16 +123,17 @@ def snapshot() -> None:
 def drift(snapshot_dir: str = typer.Argument(..., help="path to a snapshot dir")) -> None:
     """Compare a snapshot to live state (read-only)."""
     from pathlib import Path
+
     raise typer.Exit(detect_drift(Path(snapshot_dir)))
 
 
 @app.command()
 def sol(
     slot: int = typer.Argument(..., help="blade slot 1..32"),
-    no_refresh: bool = typer.Option(False, "--no-refresh",
-                                    help="re-read previous /tmp/sol.dat without re-capturing"),
-    save: str = typer.Option("", "--save",
-                             help="also write the buffer to this file"),
+    no_refresh: bool = typer.Option(
+        False, "--no-refresh", help="re-read previous /tmp/sol.dat without re-capturing"
+    ),
+    save: str = typer.Option("", "--save", help="also write the buffer to this file"),
 ) -> None:
     """Capture and dump the iBMC SOL buffer for a blade.
 
@@ -142,6 +146,7 @@ def sol(
     console.print(text, highlight=False)
     if save:
         from pathlib import Path
+
         Path(save).write_text(text)
         console.print(f"[green]wrote {len(text)} bytes to {save}[/]")
 
@@ -149,8 +154,9 @@ def sol(
 @app.command("kvm-analyze")
 def kvm_analyze(
     capture: str = typer.Argument(..., help="path to a server→client .bin TCP dump"),
-    show_tiles: int = typer.Option(0, "--show-tiles",
-                                   help="dump the first N tile tokens of the first image"),
+    show_tiles: int = typer.Option(
+        0, "--show-tiles", help="dump the first N tile tokens of the first image"
+    ),
 ) -> None:
     """Offline analyzer for a captured iKVM server→client byte stream.
 
@@ -159,38 +165,50 @@ def kvm_analyze(
     """
     from pathlib import Path
     from .kvm.transport import (
-        parse_kvm_stream, reassemble_images, summarise,
+        parse_kvm_stream,
+        reassemble_images,
+        summarise,
         classify_tiles_jpeg_walk,
     )
+
     data = Path(capture).read_bytes()
     frames = parse_kvm_stream(data)
     by_op: dict[int, int] = {}
     for fr in frames:
         by_op[fr.op] = by_op.get(fr.op, 0) + 1
-    console.print(f"[bold]parsed {len(frames)} frames[/] from {len(data)} bytes "
-                  f"({len(data) - sum(4 + f.body_len for f in frames)} trailing)")
-    console.print(f"[yellow]ops:[/] " + ", ".join(
-        f"0x{op:02x}={n}" for op, n in sorted(by_op.items())))
+    console.print(
+        f"[bold]parsed {len(frames)} frames[/] from {len(data)} bytes "
+        f"({len(data) - sum(4 + f.body_len for f in frames)} trailing)"
+    )
+    console.print(
+        "[yellow]ops:[/] " + ", ".join(f"0x{op:02x}={n}" for op, n in sorted(by_op.items()))
+    )
     images = reassemble_images(frames)
     console.print(f"[bold]reassembled {len(images)} image(s)[/]")
     for img in images:
         s = summarise(img)
-        console.print(f"  img 0x{img.img_id:02x}: {s['wxh']} {s['size']} B  "
-                      f"tiles_walked={s['walked_tokens']}/{s['expected_tiles']}  "
-                      f"types={s['tile_types']}  unwalked={s['unwalked_bytes']} B")
+        console.print(
+            f"  img 0x{img.img_id:02x}: {s['wxh']} {s['size']} B  "
+            f"tiles_walked={s['walked_tokens']}/{s['expected_tiles']}  "
+            f"types={s['tile_types']}  unwalked={s['unwalked_bytes']} B"
+        )
     if show_tiles and images:
-        console.print(f"\n[yellow]first {show_tiles} tile tokens of img 0x"
-                      f"{images[0].img_id:02x}:[/]")
+        console.print(
+            f"\n[yellow]first {show_tiles} tile tokens of img 0x{images[0].img_id:02x}:[/]"
+        )
         for tok in list(classify_tiles_jpeg_walk(images[0]))[:show_tiles]:
-            console.print(f"  #{tok.index:3d}  off={tok.offset:6d}  "
-                          f"zt={tok.zip_type} rt={tok.r_zip_type}  "
-                          f"len={tok.length}  body[:8]={tok.body[:8].hex()}")
+            console.print(
+                f"  #{tok.index:3d}  off={tok.offset:6d}  "
+                f"zt={tok.zip_type} rt={tok.r_zip_type}  "
+                f"len={tok.length}  body[:8]={tok.body[:8].hex()}"
+            )
 
 
 @app.command("kvm-render")
 def kvm_render(
-    image_bin: str = typer.Argument(..., help="path to a reassembled image .bin "
-                                              "(7004 B for 800x600 POST-screen capture)"),
+    image_bin: str = typer.Argument(
+        ..., help="path to a reassembled image .bin (7004 B for 800x600 POST-screen capture)"
+    ),
     out_png: str = typer.Argument(..., help="output PNG path"),
     width: int = typer.Option(800, "--width"),
     height: int = typer.Option(600, "--height"),
@@ -203,15 +221,19 @@ def kvm_render(
     """
     from pathlib import Path
     from .kvm.codec_old import decode_old_rle, bgr233_to_rgb888
+
     data = Path(image_bin).read_bytes()
     fb = decode_old_rle(data, width, height)
-    console.print(f"[yellow]decoded {len(data)} B input -> {len(fb)} B framebuffer "
-                  f"({width}x{height}, BGR233 8bpp)[/]")
+    console.print(
+        f"[yellow]decoded {len(data)} B input -> {len(fb)} B framebuffer "
+        f"({width}x{height}, BGR233 8bpp)[/]"
+    )
     if len(fb) != width * height:
-        console.print(f"[red]framebuffer size mismatch — expected {width*height}[/]")
+        console.print(f"[red]framebuffer size mismatch — expected {width * height}[/]")
     rgb = bgr233_to_rgb888(fb)
     try:
         from PIL import Image
+
         img = Image.frombytes("RGB", (width, height), rgb)
         img.save(out_png)
         console.print(f"[green]wrote {out_png} ({width}x{height} RGB888)[/]")
@@ -224,11 +246,13 @@ def kvm_render(
 def gui(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
-    no_browser: bool = typer.Option(False, "--no-browser",
-                                    help="don't open the browser automatically"),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="don't open the browser automatically"
+    ),
 ) -> None:
     """Run the local web GUI (FastAPI + HTMX) at http://host:port/."""
     from .gui.app import run as run_gui
+
     run_gui(host=host, port=port, open_browser=not no_browser)
 
 
@@ -240,20 +264,32 @@ app.add_typer(vmedia_app, name="vmedia")
 def vmedia_mount(
     slot: int = typer.Option(..., "--slot", help="blade slot 1..32"),
     iso: str = typer.Option(..., "--iso", help="path to .iso file to expose as virtual CDROM"),
-    kvm_port: int = typer.Option(2200, "--kvm-port",
-                                 help="per-blade KVM stream port for codekey nego (default 2200, blade1)"),
-    hard_reset: bool = typer.Option(False, "--hard-reset",
-                                    help="if CN_EXIST persists after soft release, reboot the iBMC "
-                                         "(IPMC only — host CPU/disk are NOT touched, ~30s recovery)"),
-    no_auto_release: bool = typer.Option(False, "--no-auto-release",
-                                         help="skip the soft release attempt entirely"),
+    kvm_port: int = typer.Option(
+        2200, "--kvm-port", help="per-blade KVM stream port for codekey nego (default 2200, blade1)"
+    ),
+    hard_reset: bool = typer.Option(
+        False,
+        "--hard-reset",
+        help="if CN_EXIST persists after soft release, reboot the iBMC "
+        "(IPMC only — host CPU/disk are NOT touched, ~30s recovery)",
+    ),
+    no_auto_release: bool = typer.Option(
+        False, "--no-auto-release", help="skip the soft release attempt entirely"
+    ),
 ) -> None:
     """Mount an ISO on a blade as a virtual CDROM."""
     from .vmedia.client import mount_iso
+
     s = Settings.load()
     try:
-        mount_iso(s, slot=slot, iso_path=iso, kvm_port=kvm_port,
-                  auto_release=not no_auto_release, auto_hard_reset=hard_reset)
+        mount_iso(
+            s,
+            slot=slot,
+            iso_path=iso,
+            kvm_port=kvm_port,
+            auto_release=not no_auto_release,
+            auto_hard_reset=hard_reset,
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Ctrl-C — closing session[/]")
 
@@ -261,11 +297,13 @@ def vmedia_mount(
 @vmedia_app.command("release")
 def vmedia_release(
     slot: int = typer.Option(..., "--slot", help="blade slot 1..32"),
-    hard: bool = typer.Option(False, "--hard",
-                              help="reset the iBMC IPMC (clears all vmedia state, ~30s downtime)"),
+    hard: bool = typer.Option(
+        False, "--hard", help="reset the iBMC IPMC (clears all vmedia state, ~30s downtime)"
+    ),
 ) -> None:
     """Force-release a stale vmedia session on a blade (recovery from CN_EXIST)."""
     from .vmedia.client import force_release_vmedia
+
     s = Settings.load()
     force_release_vmedia(s, slot, hard_reset=hard)
 
@@ -281,7 +319,10 @@ def sessions_list() -> None:
     with console.status("querying sessions..."):
         items = ops.list_sessions(s)
     t = Table(title=f"Redfish sessions ({len(items)})")
-    t.add_column("ID"); t.add_column("User"); t.add_column("URL"); t.add_column("Mine?")
+    t.add_column("ID")
+    t.add_column("User")
+    t.add_column("URL")
+    t.add_column("Mine?")
     for it in items:
         t.add_row(str(it["id"]), str(it["user"]), it["url"], "yes" if it["is_mine"] else "")
     console.print(t)
@@ -301,8 +342,9 @@ def sessions_clean(yes: bool = typer.Option(False, "--yes", "-y")) -> None:
 @app.command("notify")
 def notify_cmd(
     message: str = typer.Argument(..., help="Text to send"),
-    level: str = typer.Option("info", "--level", "-l",
-                              help="info|ok|warn|error (changes emoji prefix)"),
+    level: str = typer.Option(
+        "info", "--level", "-l", help="info|ok|warn|error (changes emoji prefix)"
+    ),
 ) -> None:
     """Send a Telegram notification (smoke-test the notify wiring).
 
@@ -310,6 +352,7 @@ def notify_cmd(
     if either is unset so scripts can detect the missing config.
     """
     from .notify import is_configured, notify_telegram
+
     if not is_configured():
         console.print(
             "[yellow]Telegram not configured: set "

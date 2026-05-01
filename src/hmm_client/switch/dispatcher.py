@@ -16,6 +16,7 @@ VRP `screen-length 0 temporary` setup, paging-prompt handling, and
 `return ; save` write-confirm flow will be filled in once we have a
 live CX310 to test against.
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,9 +79,7 @@ class Dispatcher:
         try:
             client.connect(**kwargs)
         except (paramiko.SSHException, OSError) as exc:
-            raise DispatcherError(
-                f"SSH connect to {self.target.host} failed: {exc}"
-            ) from exc
+            raise DispatcherError(f"SSH connect to {self.target.host} failed: {exc}") from exc
         self._client = client
         log.info("dispatcher connected to %s", self.target.host)
 
@@ -100,9 +99,7 @@ class Dispatcher:
         """
         if self._client is None:
             raise DispatcherError("dispatcher not connected")
-        stdin, stdout, stderr = self._client.exec_command(
-            command, timeout=timeout
-        )
+        stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
         stdin.close()
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")

@@ -23,6 +23,7 @@ mode (when the chassis embed has `securekvm=1`).
 byte first). Some encrypted-mode builders skip the CRC and emit
 `0x00 0x00` instead.
 """
+
 from __future__ import annotations
 
 from secrets import token_bytes
@@ -36,15 +37,15 @@ from .base import (
 )
 
 # --- Op codes (PackData.java; outgoing) -----------------------------------
-OP_KEY_PACK = 3              # keyboardPackCommon
-OP_KEY_STATE = 4             # keyBoardState
-OP_MOUSE_PACK = 5            # mousePack / mousePackNew_abs
-OP_CONNECT_BLADE = 6         # connectBlade
+OP_KEY_PACK = 3  # keyboardPackCommon
+OP_KEY_STATE = 4  # keyBoardState
+OP_MOUSE_PACK = 5  # mousePack / mousePackNew_abs
+OP_CONNECT_BLADE = 6  # connectBlade
 OP_INTERRUPT_BLADE = 7
-OP_RESEND_DATA = 8           # resendData (request I-frame)
+OP_RESEND_DATA = 8  # resendData (request I-frame)
 OP_HEART_BEAT = 9
 OP_REQ_BLADE_PRESENT = 11
-OP_REQ_BLADE_STATE = 20      # connMode=0 (legacy)
+OP_REQ_BLADE_STATE = 20  # connMode=0 (legacy)
 OP_REQ_BLADE_STATE_TRANS = 33  # connMode=1 (secure body)
 OP_MONITOR_BLADE = 23
 OP_REPLAY_TO_SMM = 26
@@ -77,13 +78,15 @@ def crc16(data: bytes, init: int = 0x0000) -> int:
 
 # --- Frame builder (the common envelope) ----------------------------------
 
+
 def _codekey_4be(codekey: int) -> bytes:
     """`getImagePaneCodeKey_bytes` non-encrypted path — 4-byte BE int."""
     return (codekey & 0xFFFFFFFF).to_bytes(4, "big", signed=False)
 
 
-def build_frame(op: int, payload: bytes, *, sessionid: bytes,
-                secure: bool = False, with_crc: bool = True) -> bytes:
+def build_frame(
+    op: int, payload: bytes, *, sessionid: bytes, secure: bool = False, with_crc: bool = True
+) -> bytes:
     """Build a wire frame given an op + payload + sessionID bytes.
 
     - `sessionid` must already be in wire form (BE 4-byte int for plain
@@ -102,8 +105,9 @@ def build_frame(op: int, payload: bytes, *, sessionid: bytes,
         crc_bytes = bytes([(c >> 8) & 0xFF, c & 0xFF])
     else:
         crc_bytes = b"\x00\x00"
-    return (bytes([PACKHEAD1, PACKHEAD2, hi, lo])
-            + sessionid + crc_bytes + bytes([op & 0xFF]) + payload)
+    return (
+        bytes([PACKHEAD1, PACKHEAD2, hi, lo]) + sessionid + crc_bytes + bytes([op & 0xFF]) + payload
+    )
 
 
 def _smm_sid(smm_codekey: int, secure: bool, session_id_24: bytes | None) -> bytes:
@@ -115,8 +119,7 @@ def _smm_sid(smm_codekey: int, secure: bool, session_id_24: bytes | None) -> byt
     return _codekey_4be(smm_codekey)
 
 
-def _blade_sid(blade_codekey: int, encrypted: bool,
-               session_id_24: bytes | None) -> bytes:
+def _blade_sid(blade_codekey: int, encrypted: bool, session_id_24: bytes | None) -> bytes:
     """Pick the right sessionID bytes for a per-blade packet."""
     if encrypted:
         if session_id_24 is None or len(session_id_24) != 24:
@@ -127,18 +130,26 @@ def _blade_sid(blade_codekey: int, encrypted: bool,
 
 # --- SMM (handshake / port 2198) builders ---------------------------------
 
-def req_blade_present(smm_codekey: int, *, secure: bool = False,
-                      session_id_24: bytes | None = None) -> bytes:
+
+def req_blade_present(
+    smm_codekey: int, *, secure: bool = False, session_id_24: bytes | None = None
+) -> bytes:
     """`PackData.reqBladePresent` — op 11, no payload."""
     sid = _smm_sid(smm_codekey, secure, session_id_24)
     return build_frame(OP_REQ_BLADE_PRESENT, b"", sessionid=sid, secure=secure)
 
 
-def req_blade_state(blade_no: int, share_mode: int, smm_codekey: int, *,
-                    conn_mode: int = 0, secure: bool = False,
-                    session_id_24: bytes | None = None,
-                    kvm_key: bytes | None = None,
-                    vmm_iv: bytes | None = None) -> bytes:
+def req_blade_state(
+    blade_no: int,
+    share_mode: int,
+    smm_codekey: int,
+    *,
+    conn_mode: int = 0,
+    secure: bool = False,
+    session_id_24: bytes | None = None,
+    kvm_key: bytes | None = None,
+    vmm_iv: bytes | None = None,
+) -> bytes:
     """`PackData.reqBladeState` — op 20 (conn_mode=0) or 33 (conn_mode=1).
 
     Plain mode body: `[bladeNo, shareMode]` (2 bytes).
@@ -160,56 +171,74 @@ def req_blade_state(blade_no: int, share_mode: int, smm_codekey: int, *,
     return build_frame(op, payload, sessionid=sid, secure=False)
 
 
-def heart_beat_smm(smm_codekey: int, *, secure: bool = False,
-                   session_id_24: bytes | None = None) -> bytes:
+def heart_beat_smm(
+    smm_codekey: int, *, secure: bool = False, session_id_24: bytes | None = None
+) -> bytes:
     """SMM heartbeat — op 9, payload `[0]`."""
     sid = _smm_sid(smm_codekey, secure, session_id_24)
     return build_frame(OP_HEART_BEAT, bytes([0]), sessionid=sid, secure=secure)
 
 
-def contr_rate_smm(frame_num: int, smm_codekey: int, *, secure: bool = False,
-                   session_id_24: bytes | None = None) -> bytes:
+def contr_rate_smm(
+    frame_num: int, smm_codekey: int, *, secure: bool = False, session_id_24: bytes | None = None
+) -> bytes:
     """`PackData.contrRate(frameNum)` — op 28, payload `[frameNum]`.
 
     Java sets CRC field to 0,0 explicitly here.
     """
     sid = _smm_sid(smm_codekey, secure, session_id_24)
-    return build_frame(OP_CONTR_RATE, bytes([frame_num & 0xFF]),
-                       sessionid=sid, secure=secure, with_crc=False)
+    return build_frame(
+        OP_CONTR_RATE, bytes([frame_num & 0xFF]), sessionid=sid, secure=secure, with_crc=False
+    )
 
 
-def get_suite_list(blade_no: int, smm_codekey: int, *, secure: bool = False,
-                   session_id_24: bytes | None = None) -> bytes:
+def get_suite_list(
+    blade_no: int, smm_codekey: int, *, secure: bool = False, session_id_24: bytes | None = None
+) -> bytes:
     """`PackData.getSuiteList` — op 66, payload `[bladeNo]`."""
     sid = _smm_sid(smm_codekey, secure, session_id_24)
-    return build_frame(OP_GET_SUITE_LIST, bytes([blade_no & 0xFF]),
-                       sessionid=sid, secure=secure)
+    return build_frame(OP_GET_SUITE_LIST, bytes([blade_no & 0xFF]), sessionid=sid, secure=secure)
 
 
-def set_suite_pack(blade_no: int, iterations: int, suite_type: int,
-                   smm_codekey: int, *, secure: bool = False,
-                   session_id_24: bytes | None = None) -> bytes:
+def set_suite_pack(
+    blade_no: int,
+    iterations: int,
+    suite_type: int,
+    smm_codekey: int,
+    *,
+    secure: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """`PackData.setSuitePack` — op 68.
 
     Payload: `[bladeNo, suite_type, iter_be_4B]`.
     """
     sid = _smm_sid(smm_codekey, secure, session_id_24)
-    payload = bytes([
-        blade_no & 0xFF,
-        suite_type & 0xFF,
-        (iterations >> 24) & 0xFF,
-        (iterations >> 16) & 0xFF,
-        (iterations >> 8) & 0xFF,
-        iterations & 0xFF,
-    ])
+    payload = bytes(
+        [
+            blade_no & 0xFF,
+            suite_type & 0xFF,
+            (iterations >> 24) & 0xFF,
+            (iterations >> 16) & 0xFF,
+            (iterations >> 8) & 0xFF,
+            iterations & 0xFF,
+        ]
+    )
     return build_frame(OP_SET_SUITE_PACK, payload, sessionid=sid, secure=secure)
 
 
 # --- Per-blade (port 2200) builders ----------------------------------------
 
-def connect_blade(blade_no: int, color_bit: int, fpeg_alg: bool,
-                  blade_codekey: int, *, encrypted: bool = False,
-                  session_id_24: bytes | None = None) -> bytes:
+
+def connect_blade(
+    blade_no: int,
+    color_bit: int,
+    fpeg_alg: bool,
+    blade_codekey: int,
+    *,
+    encrypted: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """`PackData.connectBlade` — op 6.
 
     Plain body: `[bladeNo, colorBit, fpegAlg]`.
@@ -217,61 +246,78 @@ def connect_blade(blade_no: int, color_bit: int, fpeg_alg: bool,
     `packData[sessidLen + 10] = 1` line).
     """
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
-    payload = bytes([blade_no & 0xFF, color_bit & 0xFF,
-                     1 if fpeg_alg else 0])
+    payload = bytes([blade_no & 0xFF, color_bit & 0xFF, 1 if fpeg_alg else 0])
     if fpeg_alg:
         payload += b"\x01"
     return build_frame(OP_CONNECT_BLADE, payload, sessionid=sid)
 
 
-def monitor_blade(blade_no: int, blade_codekey: int, *,
-                  encrypted: bool = False,
-                  session_id_24: bytes | None = None) -> bytes:
+def monitor_blade(
+    blade_no: int,
+    blade_codekey: int,
+    *,
+    encrypted: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """`PackData.monitorBlade` — op 23, payload `[bladeNo, 1]`."""
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
-    return build_frame(OP_MONITOR_BLADE, bytes([blade_no & 0xFF, 1]),
-                       sessionid=sid)
+    return build_frame(OP_MONITOR_BLADE, bytes([blade_no & 0xFF, 1]), sessionid=sid)
 
 
-def resend_data(blade_no: int, blade_codekey: int, *,
-                encrypted: bool = False,
-                session_id_24: bytes | None = None) -> bytes:
+def resend_data(
+    blade_no: int,
+    blade_codekey: int,
+    *,
+    encrypted: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """`PackData.resendData` — op 8, payload `[bladeNo]`. Asks for I-frame."""
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
     return build_frame(OP_RESEND_DATA, bytes([blade_no & 0xFF]), sessionid=sid)
 
 
-def heart_beat_blade(blade_no: int, blade_codekey: int, *,
-                     encrypted: bool = False,
-                     session_id_24: bytes | None = None) -> bytes:
+def heart_beat_blade(
+    blade_no: int,
+    blade_codekey: int,
+    *,
+    encrypted: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """Per-blade heartbeat — op 9, payload `[bladeNo]` (Java).
 
     Note this differs from SMM heartbeat where payload is `[0]`.
     """
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
-    return build_frame(OP_HEART_BEAT, bytes([blade_no & 0xFF]),
-                       sessionid=sid)
+    return build_frame(OP_HEART_BEAT, bytes([blade_no & 0xFF]), sessionid=sid)
 
 
-def contr_rate_blade(frame_num: int, blade_no: int, blade_codekey: int, *,
-                     encrypted: bool = False,
-                     session_id_24: bytes | None = None) -> bytes:
+def contr_rate_blade(
+    frame_num: int,
+    blade_no: int,
+    blade_codekey: int,
+    *,
+    encrypted: bool = False,
+    session_id_24: bytes | None = None,
+) -> bytes:
     """`PackData.contrRate(frameNum, bladeNo)` — op 28."""
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
-    return build_frame(OP_CONTR_RATE,
-                       bytes([frame_num & 0xFF, blade_no & 0xFF]),
-                       sessionid=sid)
+    return build_frame(OP_CONTR_RATE, bytes([frame_num & 0xFF, blade_no & 0xFF]), sessionid=sid)
 
 
 # --- Keyboard --------------------------------------------------------------
 
-def keyboard_pack(blade_no: int, hid_report_8b: bytes, *,
-                  blade_codekey: int,
-                  encrypted: bool,
-                  is_new: bool,
-                  session_id_24: bytes | None = None,
-                  kbd_key: bytes | None = None,
-                  kbd_iv: bytes | None = None) -> bytes:
+
+def keyboard_pack(
+    blade_no: int,
+    hid_report_8b: bytes,
+    *,
+    blade_codekey: int,
+    encrypted: bool,
+    is_new: bool,
+    session_id_24: bytes | None = None,
+    kbd_key: bytes | None = None,
+    kbd_iv: bytes | None = None,
+) -> bytes:
     """`PackData.keyboardPackCommon` + `PackData.encry` — op 3.
 
     Java has TWO independent flags here, and which AES key to use
@@ -320,14 +366,21 @@ def keyboard_pack(blade_no: int, hid_report_8b: bytes, *,
 
 # --- Mouse ------------------------------------------------------------------
 
-def mouse_pack_abs(x_3000: int, y_3000: int, buttons: int, wheel: int,
-                   blade_no: int, *,
-                   blade_codekey: int,
-                   encrypted: bool,
-                   is_new: bool = True,
-                   session_id_24: bytes | None = None,
-                   kbd_key: bytes | None = None,
-                   kbd_iv: bytes | None = None) -> bytes:
+
+def mouse_pack_abs(
+    x_3000: int,
+    y_3000: int,
+    buttons: int,
+    wheel: int,
+    blade_no: int,
+    *,
+    blade_codekey: int,
+    encrypted: bool,
+    is_new: bool = True,
+    session_id_24: bytes | None = None,
+    kbd_key: bytes | None = None,
+    kbd_iv: bytes | None = None,
+) -> bytes:
     """`PackData.mousePackNew_abs` — op 5.
 
     Coordinates must be pre-scaled to the chassis's [0..3000] range.
@@ -344,12 +397,16 @@ def mouse_pack_abs(x_3000: int, y_3000: int, buttons: int, wheel: int,
     x = x_3000 & 0xFFFF
     y = y_3000 & 0xFFFF
     sid = _blade_sid(blade_codekey, encrypted, session_id_24)
-    mouse_6 = bytes([
-        buttons & 0xFF,
-        (x >> 8) & 0xFF, x & 0xFF,
-        (y >> 8) & 0xFF, y & 0xFF,
-        wheel & 0xFF,
-    ])
+    mouse_6 = bytes(
+        [
+            buttons & 0xFF,
+            (x >> 8) & 0xFF,
+            x & 0xFF,
+            (y >> 8) & 0xFF,
+            y & 0xFF,
+            wheel & 0xFF,
+        ]
+    )
     if is_new:
         if encrypted:
             if kbd_key is None or kbd_iv is None:

@@ -9,6 +9,7 @@ The HMM Web UI auth is a separate context from Redfish. Flow:
 The <embed> attributes contain the AES keys, IV, verify ints, handshake port
 (2198), and VMM base port (8500 - per-blade port = base + slot).
 """
+
 from __future__ import annotations
 
 import re
@@ -27,13 +28,13 @@ class Session:
     """Per-session VirtualMedia/KVM keys + endpoint base."""
 
     host: str
-    handshake_port: int       # `port` attr (2198)
-    vmm_base_port: int        # `vmmServerPort` (8500); per-blade = base + slot
-    verifyvalue: int          # codekey int (KVM stream)
-    verifyvalueext: bytes     # codekey_ext bytes (VirtualMedia, 16 bytes)
-    aes_key_kvm: bytes        # 16 bytes
-    aes_key_vmedia: bytes     # 16 bytes (= codekey_ext bytes)
-    aes_iv: bytes             # 16 bytes
+    handshake_port: int  # `port` attr (2198)
+    vmm_base_port: int  # `vmmServerPort` (8500); per-blade = base + slot
+    verifyvalue: int  # codekey int (KVM stream)
+    verifyvalueext: bytes  # codekey_ext bytes (VirtualMedia, 16 bytes)
+    aes_key_kvm: bytes  # 16 bytes
+    aes_key_vmedia: bytes  # 16 bytes (= codekey_ext bytes)
+    aes_iv: bytes  # 16 bytes
     csrftoken: str
     sessid: str
     secure: bool
@@ -56,21 +57,26 @@ def _parse_embed(html: str) -> dict[str, str]:
 def login(host: str, user: str, password: str, *, verify_tls: bool = False) -> Session:
     """Run the full login + embed-extract flow against the HMM web."""
     with httpx.Client(
-        verify=verify_tls, timeout=15.0,
-        base_url=f"https://{host}", follow_redirects=False,
+        verify=verify_tls,
+        timeout=15.0,
+        base_url=f"https://{host}",
+        follow_redirects=False,
     ) as c:
         # 1. seed SESSID cookie
         c.get("/login.html")
 
         # 2. authenticate
-        r = c.post("/loginhandler.php", data={
-            "actiontype": "login",
-            "username": user,
-            "userpasswd": password,
-            "usermode": "1",
-            "code": "",
-            "language": "en",
-        })
+        r = c.post(
+            "/loginhandler.php",
+            data={
+                "actiontype": "login",
+                "username": user,
+                "userpasswd": password,
+                "usermode": "1",
+                "code": "",
+                "language": "en",
+            },
+        )
         r.raise_for_status()
         try:
             root = ET.fromstring(r.text)
@@ -102,20 +108,24 @@ def login(host: str, user: str, password: str, *, verify_tls: bool = False) -> S
     # "characters with NOTHING to do" symptom. Prefer the explicit param;
     # fall back to the parsed value only if the parameter is missing.
     import logging as _logging
+
     _l = _logging.getLogger(__name__)
     explicit_vv = emb.get("verifyvalue")
     if explicit_vv:
         try:
             verifyvalue = int(explicit_vv)
         except ValueError:
-            _l.warning("verifyvalue param not an int: %r — falling back to "
-                       "secretkey[0:4]", explicit_vv)
+            _l.warning(
+                "verifyvalue param not an int: %r — falling back to secretkey[0:4]", explicit_vv
+            )
             verifyvalue = verifyvalue_from_secretkey
         else:
             if verifyvalue != verifyvalue_from_secretkey:
-                _l.info("verifyvalue: explicit=%d secretkey[0:4]=%d "
-                        "(using explicit)",
-                        verifyvalue, verifyvalue_from_secretkey)
+                _l.info(
+                    "verifyvalue: explicit=%d secretkey[0:4]=%d (using explicit)",
+                    verifyvalue,
+                    verifyvalue_from_secretkey,
+                )
     else:
         verifyvalue = verifyvalue_from_secretkey
 

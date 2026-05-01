@@ -1,4 +1,5 @@
 """Tests for `hmm_client.kvm_core.decoder.color_converter`."""
+
 from __future__ import annotations
 
 import pytest

@@ -14,6 +14,7 @@ This module exposes only the conversions the live decoder needs.
 The reverse direction (RGB→YCbCr) was used by Java's encoder side
 and is omitted here.
 """
+
 from __future__ import annotations
 
 # Java's `Base.USB_KEY_CTRL = 224 = 0xE0` — used as the top-3-bits
@@ -50,9 +51,7 @@ def ycbcr2rgb332(y: int, cb: int, cr: int) -> int:
     b = 0 if b < 0 else (255 if b > 255 else b)
     # Pack into BGR233 (BBGGGRRR layout, B in high bits):
     #   bgr233 = (B & 0xC0) | ((G & 0xE0) >> 2) | ((R & 0xE0) >> 5)
-    return ((b & TOP2_MASK)
-            | ((g & TOP3_MASK) >> 2)
-            | ((r & TOP3_MASK) >> 5)) & 0xFF
+    return ((b & TOP2_MASK) | ((g & TOP3_MASK) >> 2) | ((r & TOP3_MASK) >> 5)) & 0xFF
 
 
 def ycbcr2rgb(y: int, cb: int, cr: int) -> int:
