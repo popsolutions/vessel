@@ -101,7 +101,11 @@ def power(settings: Settings, slot: int, action: str) -> str:
 
     `frucontrol` (reset/cycle/nmi) prompts the iBMC's interactive
     "Do you want to continue?[Y/N]:" — we auto-answer Y here.
+
+    Records one audit-log entry on success or failure (see `audit.py`).
     """
+    from . import audit
+
     if action in POWER_VALUES:
         cmd = f"ipmcset -d powerstate -v {POWER_VALUES[action]}"
     elif action in RESET_VALUES:
@@ -111,20 +115,61 @@ def power(settings: Settings, slot: int, action: str) -> str:
             f"unknown power action: {action!r} "
             f"(want one of {list(POWER_VALUES) + list(RESET_VALUES)})"
         )
-    with IBMCSession(settings, slot) as ibmc:
-        out1 = ibmc.run(cmd)
-        # Both powerstate and frucontrol show the same Y/N prompt; auto-confirm.
-        if "Y/N" in out1 or "[Y/N]" in out1:
-            out2 = ibmc.run("Y", wait=2.5)
-            return out1 + "\n" + out2
-        return out1
+    try:
+        with IBMCSession(settings, slot) as ibmc:
+            out1 = ibmc.run(cmd)
+            # Both powerstate and frucontrol show the same Y/N prompt; auto-confirm.
+            if "Y/N" in out1 or "[Y/N]" in out1:
+                out2 = ibmc.run("Y", wait=2.5)
+                out = out1 + "\n" + out2
+            else:
+                out = out1
+    except Exception as exc:
+        audit.log_op(
+            op=f"power.{action}",
+            target_kind="blade",
+            target_id=f"slot{slot}",
+            result="failed",
+            evidence={"command": cmd, "error": str(exc)},
+        )
+        raise
+    audit.log_op(
+        op=f"power.{action}",
+        target_kind="blade",
+        target_id=f"slot{slot}",
+        result="success",
+        evidence={"command": cmd, "output_tail": out[-512:]},
+    )
+    return out
 
 
 def set_boot_device(settings: Settings, slot: int, device: str) -> str:
+    """Override the next-boot device for a blade. Audited."""
+    from . import audit
+
     if device not in BOOT_DEVICES:
         raise ValueError(f"unknown boot device: {device!r} (want one of {list(BOOT_DEVICES)})")
-    with IBMCSession(settings, slot) as ibmc:
-        return ibmc.run(f"ipmcset -d bootdevice -v {BOOT_DEVICES[device]}")
+    cmd = f"ipmcset -d bootdevice -v {BOOT_DEVICES[device]}"
+    try:
+        with IBMCSession(settings, slot) as ibmc:
+            out = ibmc.run(cmd)
+    except Exception as exc:
+        audit.log_op(
+            op="boot.set_device",
+            target_kind="blade",
+            target_id=f"slot{slot}",
+            result="failed",
+            evidence={"device": device, "command": cmd, "error": str(exc)},
+        )
+        raise
+    audit.log_op(
+        op="boot.set_device",
+        target_kind="blade",
+        target_id=f"slot{slot}",
+        result="success",
+        evidence={"device": device, "command": cmd, "output_tail": out[-512:]},
+    )
+    return out
 
 
 def get_boot_device(settings: Settings, slot: int) -> str:
