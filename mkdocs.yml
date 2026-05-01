@@ -1,0 +1,64 @@
+site_name: Vessel
+site_description: Infrastructure-as-code for the Huawei E9000 chassis
+site_url: https://popsolutions.github.io/vessel/
+repo_url: https://github.com/popsolutions/vessel
+repo_name: popsolutions/vessel
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: orange
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: orange
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Architecture: architecture.md
+  - Operations:
+      - Audit log: operations/audit-log.md
+      - Health checks: operations/health-checks.md
+      - GUI auth: operations/gui-auth.md
+  - Reference:
+      - Roadmap: roadmap.md
+      - Discovery notes: discovery.md
+      - Topology: topology.md
+      - HMM CLI vocabulary: cli-vocabulary.md
+      - KVM protocol RE: kvm-protocol-re.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.snippets
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/popsolutions/vessel
