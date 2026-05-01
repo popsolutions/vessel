@@ -1,0 +1,9 @@
+# Default owner for everything in the repo. Overridden by more specific
+# rules below when needed.
+* @marcos-mendez
+
+# Security-sensitive paths get a second pair of eyes when we have them.
+/SECURITY.md             @marcos-mendez
+/.github/                @marcos-mendez
+/src/hmm_client/notify.py @marcos-mendez
+/src/hmm_client/switch/   @marcos-mendez

@@ -1,0 +1,60 @@
+name: Feature request
+description: Propose a new capability or improvement.
+labels: ["type-feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for **new capabilities** (a CLI command, a new IaC resource,
+        a new HMM endpoint to wrap, etc.). For bugs, use the bug template.
+        For security issues, use [Security Advisories](https://github.com/popsolutions/vessel/security/advisories/new).
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What workflow does this enable? Who is the user?
+      placeholder: |
+        As a [role], I want to [outcome] so that [benefit].
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: |
+        Concrete shape of the API/CLI/UI you'd want. Example commands,
+        Python signatures, OpenTofu HCL, or Ansible task YAML.
+      render: yaml
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which roadmap phase does this belong to?
+      description: See [docs/roadmap.md](../../docs/roadmap.md)
+      options:
+        - "Phase 1 — Discovery & Backup"
+        - "Phase 2 — Proxmox commissioning"
+        - "Phase 3 — Switch ops & VLAN"
+        - "Phase 4 — GUI / KVM"
+        - "Phase 5 — Vessel Platform (SDK + IaC)"
+        - "Cross-cutting / unsure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Did you look at the existing CLI / SDK / Redfish API? Why don't they
+        cover this?
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Links to related issues, RE captures, vendor docs, etc.

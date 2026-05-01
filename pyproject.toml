@@ -20,7 +20,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
     "pytest-httpx>=0.30",
+    "mypy>=1.10",
     "ruff>=0.5",
 ]
 
@@ -37,3 +39,32 @@ packages = ["src/hmm_client"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "unit: fast pure-Python tests with no I/O",
+    "integration: tests that hit a real chassis (skipped in CI)",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:paramiko.*",
+]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/hmm_client"]
+strict_optional = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_optional = true
+# Start permissive; tighten over time
+ignore_missing_imports = true
+follow_imports = "silent"
