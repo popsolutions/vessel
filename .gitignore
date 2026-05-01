@@ -34,3 +34,4 @@ captures/
 
 # Claude Code local agent state
 .claude/
+vessel_popsolutions.tar.xz
