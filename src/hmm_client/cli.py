@@ -339,6 +339,32 @@ def sessions_clean(yes: bool = typer.Option(False, "--yes", "-y")) -> None:
     console.print(f"[green]deleted {n} orphan session(s)[/]")
 
 
+@app.command("gui-password-hash")
+def gui_password_hash_cmd(
+    password: str = typer.Option(
+        "",
+        "--password",
+        "-p",
+        help="Plaintext password (omit to be prompted interactively)",
+    ),
+) -> None:
+    """Generate a bcrypt hash for VESSEL_GUI_PASSWORD_HASH.
+
+    Without --password the prompt hides input. Copy the resulting
+    hash into your `.env` (or secret manager) and restart the GUI.
+    """
+    from .auth import hash_password
+
+    if not password:
+        password = typer.prompt("password", hide_input=True, confirmation_prompt=True)
+    if not password:
+        console.print("[red]password may not be empty[/]")
+        raise typer.Exit(1)
+    h = hash_password(password)
+    console.print("[dim]Add to your .env (and never commit):[/]")
+    console.print(f"VESSEL_GUI_PASSWORD_HASH={h}")
+
+
 @app.command("notify")
 def notify_cmd(
     message: str = typer.Argument(..., help="Text to send"),

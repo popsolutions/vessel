@@ -399,6 +399,7 @@ name = "hmm-client"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "bcrypt" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -423,6 +424,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bcrypt", specifier = ">=4.0" },
     { name = "cryptography", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

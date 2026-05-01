@@ -18,20 +18,55 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
+from .. import auth as _auth
 from .. import ops
 from ..config import Settings
 from ..snapshot import run_snapshot
 
 _log = logging.getLogger(__name__)
 
+
+def _gui_auth(
+    creds: HTTPBasicCredentials | None = Depends(_auth.security),
+) -> str:
+    """Global FastAPI dependency: HTTP Basic Auth when configured.
+
+    When `VESSEL_GUI_PASSWORD_HASH` is set, every request must carry
+    valid Basic credentials. When unset, returns "anonymous" so route
+    handlers can still record an actor in the audit log.
+    """
+    return _auth.require_auth(creds=creds)
+
+
+if not _auth.is_enabled():
+    # Loud startup warning so operators don't accidentally ship a GUI
+    # without auth. We don't refuse to start — zero-config dev-mode is
+    # important — but this banner needs to be impossible to miss.
+    _log.warning(
+        "GUI authentication is DISABLED — anyone with network access "
+        "to this port can mutate chassis state. Set "
+        "VESSEL_GUI_PASSWORD_HASH (use `hmm gui-password-hash`) "
+        "before exposing beyond 127.0.0.1."
+    )
+
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
-app = FastAPI(title="hmm — Huawei E9000 web", version="0.0.1")
+app = FastAPI(
+    title="hmm — Huawei E9000 web",
+    version="0.0.1",
+    # Global Basic Auth dependency — enforced when
+    # VESSEL_GUI_PASSWORD_HASH is set; returns "anonymous" otherwise.
+    # WebSocket routes accept the dependency too but don't enforce
+    # Basic on their handshake (clients should send a token-bearing
+    # query parameter instead — TODO follow-up).
+    dependencies=[Depends(_gui_auth)],
+)
 
 _tasks: dict[str, dict[str, Any]] = {}
 _tasks_lock = threading.Lock()
