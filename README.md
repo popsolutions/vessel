@@ -42,21 +42,21 @@ SMM (HMM) management modules. Replaces the proprietary Java applet
 extend, and run anywhere.
 
 ```
-┌──────────────────┐                  ┌─────────────┐
+┌──────────────────┐                   ┌─────────────┐
 │  Your browser    │  ◀── WebSocket ──┤   FastAPI   │
-│  (any modern     │                  │  GUI server │
+│  (any modern     │                   │  GUI server │
 │   Chrome, Brave, │  ── HID input ──▶│  (Python)   │
-│   Firefox, …)    │                  │             │
-└──────────────────┘                  └──────┬──────┘
-                                             │ TCP (custom Huawei
-                                             │  iKVM + VirtualMedia)
-                                      ┌──────▼──────┐
-                                      │ E9000 HMM   │
-                                      │ 192.168.1.30│
-                                      │ ┌─────────┐ │
-                                      │ │ iBMC ×16│ │
-                                      │ └─────────┘ │
-                                      └─────────────┘
+│   Firefox, …)    │                   │             │
+└──────────────────┘                   └──────┬──────┘
+                                              │ TCP (custom Huawei
+                                              │  iKVM + VirtualMedia)
+                                       ┌──────▼──────┐
+                                       │ E9000 HMM   │
+                                       │ 192.168.1.30│
+                                       │ ┌─────────┐ │
+                                       │ │ iBMC ×16│ │
+                                       │ └─────────┘ │
+                                       └─────────────┘
 ```
 
 ## What works today
