@@ -2,61 +2,98 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>hmm KVM — slot {{ slot }} @ {{ host }}</title>
+  <title>Vessel KVM — blade{{ slot }} @ {{ host }}</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Rudder palette */
+    /* Rudder palette + applet-style chrome */
     :root {
       --rudder-on:      #13beb7;
       --rudder-off:     #e73b16;
       --rudder-pending: #f0ab00;
       --rudder-na:      #abb6bf;
+      --bar:    #0b1220;
+      --bar-2:  #111827;
+      --line:   #1f2937;
+      --text:   #e2e8f0;
+      --dim:    #64748b;
     }
-    body { background: #000; color: #e2e8f0;
-           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin:0;
-           height: 100vh; display: flex; flex-direction: column; }
-    .pwr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-               background: var(--rudder-pending); vertical-align: middle; margin-right: 4px;
-               animation: pwr-pulse 1.4s ease-in-out infinite; }
-    .pwr-on  .pwr-dot { background: var(--rudder-on);  animation: none; }
-    .pwr-off .pwr-dot { background: var(--rudder-off); animation: none; }
-    .pwr-unknown .pwr-dot { background: var(--rudder-na); animation: none; }
-    .pwr-on  .pwr-text { color: var(--rudder-on); }
-    .pwr-off .pwr-text { color: var(--rudder-off); }
-    .pwr-unknown .pwr-text { color: var(--rudder-na); }
-    .pwr-text { font-weight: bold; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #000;
+      color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+
+    /* ---- TOOLBAR (top) — icon row + 32-blade tab strip ---- */
+    #toolbar { background: var(--bar); border-bottom: 1px solid var(--line);
+      display: flex; align-items: stretch; height: 36px; flex-shrink: 0; }
+    .tb-section { display: flex; align-items: center; padding: 0 6px;
+      border-right: 1px solid var(--line); gap: 2px; }
+    .tb-section.flex { flex: 1; padding: 0; overflow: hidden; }
+    .tb-btn { background: transparent; border: 1px solid transparent; color: var(--text);
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; border-radius: 3px; padding: 0; }
+    .tb-btn:hover { background: #1e293b; border-color: var(--line); }
+    .tb-btn.active { background: #047857; border-color: var(--rudder-on); color: #fff; }
+    .tb-btn svg { width: 16px; height: 16px; }
+
+    /* ---- BLADE TAB STRIP (1..32, applet-faithful) ---- */
+    #tabs { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden;
+      scrollbar-width: thin; }
+    #tabs::-webkit-scrollbar { height: 4px; }
+    #tabs::-webkit-scrollbar-thumb { background: #334155; }
+    .tab { flex: 0 0 36px; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; cursor: pointer;
+      border-right: 1px solid var(--line); background: transparent;
+      color: var(--dim); text-decoration: none; font-size: 11px;
+      position: relative; }
+    .tab:hover { background: #1e293b; color: var(--text); }
+    .tab.active { background: var(--bar-2); color: var(--rudder-on);
+      border-bottom: 2px solid var(--rudder-on); margin-bottom: -1px; }
+    .tab.absent { color: #334155; cursor: not-allowed; opacity: .55; }
+    .tab.absent:hover { background: transparent; color: #334155; }
+    .tab .tab-num { font-weight: bold; font-size: 12px; }
+    .tab .pwr-pip { position: absolute; top: 4px; right: 4px;
+      width: 5px; height: 5px; border-radius: 50%; background: var(--rudder-na); }
+    .tab[data-pwr="on"]  .pwr-pip { background: var(--rudder-on); }
+    .tab[data-pwr="off"] .pwr-pip { background: var(--rudder-off); }
+    .tab[data-pwr="loading"] .pwr-pip { background: var(--rudder-pending);
+      animation: pwr-pulse 1.4s ease-in-out infinite; }
     @keyframes pwr-pulse { 50% { opacity: .35; } }
-    #status { background: #0b1220; border-bottom: 1px solid #1f2937;
-              padding: 8px 16px; display: flex; gap: 14px; align-items: center;
-              font-size: 12px; flex-wrap: wrap; flex-shrink: 0; }
-    #status .ok  { color: #10b981; }
-    #status .err { color: #f43f5e; }
-    #status .dim { color: #64748b; }
+
+    /* ---- BLADE LABEL BAR (between tabs and canvas) ---- */
+    #bladebar { background: var(--bar-2); border-bottom: 1px solid var(--line);
+      padding: 4px 10px; display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0; height: 28px; }
+    #bladebar .lbl { font-weight: bold; color: var(--rudder-on); }
+    #bladebar .dim { color: var(--dim); }
+
+    /* ---- MAIN AREA (canvas + collapsible side panel) ---- */
     #main { flex: 1; display: flex; min-height: 0; }
     #screen { flex: 1; display: flex; align-items: center; justify-content: center;
-              padding: 0; min-width: 0; min-height: 0; background: #000;
-              position: relative; overflow: hidden; }
-    #frame  { image-rendering: pixelated; outline: none; cursor: crosshair;
-              display: block; max-width: 100%; max-height: 100%;
-              width: auto; height: auto;
-              transform-origin: center; }
+      padding: 0; min-width: 0; min-height: 0; background: #000;
+      position: relative; overflow: hidden; }
+    #frame { image-rendering: pixelated; outline: none; cursor: crosshair;
+      display: block; max-width: 100%; max-height: 100%;
+      width: auto; height: auto; }
     #frame:focus { box-shadow: inset 0 0 0 2px #047857; }
     #focus-hint { position: absolute; top: 14px; left: 50%;
-                  transform: translateX(-50%);
-                  background: rgba(0,0,0,.78); color: #fbbf24;
-                  border: 1px solid #b45309; padding: 6px 12px;
-                  border-radius: 4px; font-size: 11px; pointer-events: none;
-                  display: none; z-index: 10; }
+      transform: translateX(-50%); background: rgba(0,0,0,.78);
+      color: var(--rudder-pending); border: 1px solid #b45309;
+      padding: 6px 12px; border-radius: 4px; font-size: 11px;
+      pointer-events: none; display: none; z-index: 10; }
     #focus-hint.show { display: block; }
-    #side   { width: 210px; background: #0b1220; border-left: 1px solid #1f2937;
-              padding: 10px 12px; overflow-y: auto; font-size: 11px; flex-shrink: 0; }
-    #side h3 { color: #10b981; font-weight: bold; margin: 12px 0 6px;
-               font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+
+    /* ---- SIDE PANEL — slides out from right ---- */
+    #side { width: 220px; background: var(--bar); border-left: 1px solid var(--line);
+      padding: 10px 12px; overflow-y: auto; font-size: 11px; flex-shrink: 0;
+      transition: width 200ms, padding 200ms; }
+    #side.collapsed { width: 0; padding: 10px 0; border-left: none; overflow: hidden; }
+    #side h3 { color: var(--rudder-on); font-weight: bold; margin: 10px 0 4px;
+      font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
     #side h3:first-child { margin-top: 0; }
-    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .btn { padding: 6px 8px; border-radius: 4px; font-size: 12px;
-           cursor: pointer; border: none; color: #e2e8f0; }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .btn { padding: 5px 6px; border-radius: 3px; font-size: 11px; cursor: pointer;
+      border: none; color: var(--text); font-family: inherit; }
     .btn:hover { filter: brightness(1.15); }
     .btn-on    { background: #047857; }
     .btn-off   { background: #b91c1c; }
@@ -64,64 +101,100 @@
     .btn-neutr { background: #334155; }
     .btn[disabled] { opacity: .4; cursor: not-allowed; }
     input[type=text], input[type=number] {
-        background: #0f172a; border: 1px solid #1f2937;
-        padding: 4px 6px; border-radius: 4px; width: 100%; font-size: 12px;
-        color: #e2e8f0; }
-    label.field { display: block; margin: 6px 0; }
+      background: #0f172a; border: 1px solid var(--line); padding: 4px 6px;
+      border-radius: 3px; width: 100%; font-size: 11px; color: var(--text);
+      font-family: inherit; }
+    label.field { display: block; margin: 4px 0; }
     label.check { display: flex; gap: 6px; align-items: center;
-                  color: #94a3b8; font-size: 11px; margin: 4px 0; }
-    pre.out { background: #020617; border: 1px solid #1f2937;
-              padding: 6px; border-radius: 4px; font-size: 11px;
-              white-space: pre-wrap; max-height: 100px; overflow-y: auto;
-              color: #94a3b8; }
-    /* --- ISO picker modal --- */
+      color: #94a3b8; font-size: 10px; margin: 4px 0; }
+    pre.out { background: #020617; border: 1px solid var(--line);
+      padding: 4px 6px; border-radius: 3px; font-size: 10px;
+      white-space: pre-wrap; max-height: 80px; overflow-y: auto;
+      color: #94a3b8; margin: 4px 0; }
+
+    /* ---- BOTTOM STATUS BAR (applet-faithful) ---- */
+    #statusbar { background: var(--bar); border-top: 1px solid var(--line);
+      padding: 4px 10px; display: flex; align-items: center; gap: 14px;
+      flex-shrink: 0; height: 24px; font-size: 11px; }
+    #statusbar .hint { color: var(--rudder-pending); flex: 0 1 auto; }
+    #statusbar .stat { display: flex; gap: 4px; }
+    #statusbar .stat .k { color: var(--dim); }
+    #statusbar .stat .v { color: var(--text); font-variant-numeric: tabular-nums; }
+    #statusbar .ok  { color: var(--rudder-on); }
+    #statusbar .err { color: var(--rudder-off); }
+    #statusbar .spacer { flex: 1; }
+
+    /* ---- ISO PICKER MODAL ---- */
     .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7);
-                display: none; align-items: center; justify-content: center;
-                z-index: 100; }
+      display: none; align-items: center; justify-content: center; z-index: 100; }
     .modal-bg.open { display: flex; }
-    .modal { background: #0b1220; border: 1px solid #1f2937; border-radius: 6px;
-             width: min(640px, 92vw); max-height: 80vh;
-             display: flex; flex-direction: column; }
-    .modal header { padding: 12px 14px; border-bottom: 1px solid #1f2937;
-                    display: flex; gap: 10px; align-items: center; }
-    .modal header h4 { margin: 0; color: #10b981; font-size: 13px;
-                       font-weight: bold; }
+    .modal { background: var(--bar); border: 1px solid var(--line); border-radius: 5px;
+      width: min(640px, 92vw); max-height: 80vh; display: flex; flex-direction: column; }
+    .modal header { padding: 10px 12px; border-bottom: 1px solid var(--line);
+      display: flex; gap: 10px; align-items: center; }
+    .modal header h4 { margin: 0; color: var(--rudder-on); font-size: 12px; font-weight: bold; }
     .modal header .cwd { flex: 1; color: #94a3b8; font-size: 11px;
-                         overflow: hidden; text-overflow: ellipsis;
-                         white-space: nowrap; }
-    .modal header button { background: #334155; color: #e2e8f0;
-                           border: none; border-radius: 4px;
-                           padding: 4px 10px; font-size: 12px; cursor: pointer; }
-    .modal .body { padding: 8px 6px; overflow-y: auto; flex: 1; }
-    .modal .row { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer;
-                  border-radius: 4px; font-size: 12px; align-items: center; }
-    .modal .row:hover { background: #1f2937; }
-    .modal .row .ic { width: 16px; color: #64748b; }
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .modal header button { background: #334155; color: var(--text); border: none;
+      border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+    .modal .body { padding: 6px 4px; overflow-y: auto; flex: 1; }
+    .modal .row { display: flex; gap: 8px; padding: 5px 8px; cursor: pointer;
+      border-radius: 3px; font-size: 11px; align-items: center; }
+    .modal .row:hover { background: var(--line); }
+    .modal .row .ic { width: 16px; color: var(--dim); }
     .modal .row .nm { flex: 1; }
-    .modal .row .sz { color: #64748b; font-size: 11px; }
+    .modal .row .sz { color: var(--dim); font-size: 10px; }
     .modal .row.dir .nm { color: #38bdf8; }
-    .modal .row.iso .nm { color: #e2e8f0; }
-    .modal .empty { color: #64748b; padding: 16px; text-align: center;
-                    font-size: 12px; }
+    .modal .row.iso .nm { color: var(--text); }
+    .modal .empty { color: var(--dim); padding: 14px; text-align: center; font-size: 11px; }
   </style>
 </head>
 <body>
 
-<div id="status">
-  <a href="/" class="text-emerald-400">← back</a>
-  <span class="dim">slot</span> <span>{{ slot }}</span>
-  <span class="dim">host</span> <span>{{ host }}</span>
-  <span id="pwr" class="">
-    <span class="pwr-dot"></span><span class="pwr-text">querying…</span>
-  </span>
-  <span class="dim">conn</span> <span id="conn">connecting…</span>
-  <span class="dim">frame</span> <span id="frame-id">-</span>
-  <span class="dim">size</span> <span id="frame-size">-</span>
-  <span class="dim">res</span> <span id="frame-res">-</span>
-  <span class="dim">fps</span> <span id="fps">-</span>
-  <span class="dim flex-1 text-right" id="msg"></span>
+<!-- ============================================================
+     TOP TOOLBAR — icon row + 32-blade tab strip (applet-faithful)
+     ============================================================ -->
+<div id="toolbar">
+  <div class="tb-section">
+    <a href="/" class="tb-btn" title="Back to chassis home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3"/></svg>
+    </a>
+    <button class="tb-btn" title="Reconnect KVM" onclick="location.reload()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+    </button>
+    <button class="tb-btn" title="Toggle fullscreen" onclick="toggleFullscreen()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+    </button>
+    <button class="tb-btn" title="Toggle side panel" onclick="toggleSide()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+    </button>
+  </div>
+
+  <div class="tb-section flex">
+    <div id="tabs"></div>
+  </div>
+
+  <div class="tb-section">
+    <span class="dim" style="font-size: 10px;">conn</span>
+    <span id="conn-pill" class="dim" style="font-size: 10px; padding: 0 4px;">…</span>
+  </div>
 </div>
 
+<!-- ============================================================
+     BLADE LABEL BAR
+     ============================================================ -->
+<div id="bladebar">
+  <span class="lbl">blade{{ slot }}</span>
+  <span class="dim">@</span>
+  <span>{{ host }}</span>
+  <span style="flex:1"></span>
+  <span class="dim">power</span>
+  <span id="pwr" class=""><span class="pwr-text">querying…</span></span>
+</div>
+
+<!-- ============================================================
+     MAIN AREA — KVM canvas + slide-in side panel
+     ============================================================ -->
 <div id="main">
 
   <div id="screen">
@@ -166,12 +239,9 @@
         <span class="dim">.iso file</span>
         <div style="display:flex; gap:6px;">
           <input id="iso-path-input" type="text" name="iso_path" required
-                 placeholder="(click Browse →)"
-                 style="flex:1; min-width:0;">
+                 placeholder="(click Browse →)" style="flex:1; min-width:0;">
           <button type="button" class="btn btn-neutr"
-                  onclick="openIsoPicker()" style="flex:0 0 auto;">
-            Browse…
-          </button>
+                  onclick="openIsoPicker()" style="flex:0 0 auto;">Browse…</button>
         </div>
       </label>
       <label class="check">
@@ -187,15 +257,26 @@
     <pre id="iso-out" class="out"></pre>
 
     <h3>Recovery</h3>
-    <button class="btn btn-warn w-full"
-            onclick="releaseVmedia(true)" style="width:100%">
+    <button class="btn btn-warn" onclick="releaseVmedia(true)" style="width:100%">
       Hard release vmedia (iBMC reset, ~30s)
     </button>
   </aside>
 
 </div>
 
-<canvas id="dummy" style="display:none"></canvas>
+<!-- ============================================================
+     STATUS BAR (applet-faithful) — Received / Sent / FrameNum
+     ============================================================ -->
+<div id="statusbar">
+  <span class="hint" id="status-hint">Click the screen to capture keyboard ⌨</span>
+  <span class="spacer"></span>
+  <span class="stat"><span class="k">Received:</span><span class="v" id="rx-bytes">0</span></span>
+  <span class="stat"><span class="k">Sent:</span><span class="v" id="tx-bytes">0</span></span>
+  <span class="stat"><span class="k">FrameNum:</span><span class="v" id="frame-num">0</span></span>
+  <span class="stat"><span class="k">Res:</span><span class="v" id="frame-res">-</span></span>
+  <span class="stat"><span class="k">FPS:</span><span class="v" id="fps">-</span></span>
+  <span class="stat" id="msg-cell"></span>
+</div>
 
 <div id="iso-modal" class="modal-bg" onclick="if(event.target===this)closeIsoPicker()">
   <div class="modal" role="dialog" aria-label="Pick ISO file">
@@ -208,35 +289,82 @@
   </div>
 </div>
 
+<canvas id="dummy" style="display:none"></canvas>
+
 <script>
   const slot = {{ slot }};
-  const canvas = document.getElementById('frame');
-  const ctx = canvas.getContext('2d');
-  const $conn = document.getElementById('conn');
-  const $msg  = document.getElementById('msg');
-  const $fid  = document.getElementById('frame-id');
-  const $fsz  = document.getElementById('frame-size');
-  const $fres = document.getElementById('frame-res');
-  const $fps  = document.getElementById('fps');
-  const $pout = document.getElementById('power-out');
-  const $bout = document.getElementById('boot-out');
-  const $iout = document.getElementById('iso-out');
+  const canvas  = document.getElementById('frame');
+  const ctx     = canvas.getContext('2d');
+  const $hint   = document.getElementById('focus-hint');
+  const $rx     = document.getElementById('rx-bytes');
+  const $tx     = document.getElementById('tx-bytes');
+  const $fnum   = document.getElementById('frame-num');
+  const $fres   = document.getElementById('frame-res');
+  const $fps    = document.getElementById('fps');
+  const $conn   = document.getElementById('conn-pill');
+  const $msg    = document.getElementById('msg-cell');
+  const $pout   = document.getElementById('power-out');
+  const $bout   = document.getElementById('boot-out');
+  const $iout   = document.getElementById('iso-out');
 
-  // --- WebSocket video ----------------------------------------------------
+  let rxBytes  = 0;
+  let txBytes  = 0;
+  let frameNum = 0;
+  function fmtBytes(n) {
+    if (n < 1024) return n + 'B';
+    if (n < 1048576) return (n/1024).toFixed(1) + 'K';
+    return (n/1048576).toFixed(2) + 'M';
+  }
+
+  // 32-blade tab strip — populated from /api/inventory
+  const $tabs = document.getElementById('tabs');
+  function buildTabs(blades) {
+    const populated = new Set(blades.map(b => b.slot));
+    let html = '';
+    for (let i = 1; i <= 32; i++) {
+      const present = populated.has(i);
+      const isActive = (i === slot);
+      const cls = ['tab', isActive && 'active', !present && 'absent']
+                    .filter(Boolean).join(' ');
+      const inner = `<span class="tab-num">${i}</span>
+                     ${present ? '<span class="pwr-pip"></span>' : ''}`;
+      html += present
+        ? `<a class="${cls}" href="/kvm/${i}" data-slot="${i}" title="blade${i}">${inner}</a>`
+        : `<span class="${cls}" title="blade${i} (not present)">${inner}</span>`;
+    }
+    $tabs.innerHTML = html;
+    blades.forEach(b => {
+      const tab = $tabs.querySelector(`a[data-slot="${b.slot}"]`);
+      if (!tab) return;
+      tab.dataset.pwr = 'loading';
+      fetch(`/api/blade/${b.slot}/powerstate`)
+        .then(r => r.json())
+        .then(j => { tab.dataset.pwr = j.state; })
+        .catch(() => { tab.dataset.pwr = 'unknown'; });
+    });
+  }
+  fetch('/api/inventory', {headers: {'Accept': 'text/html'}})
+    .then(r => r.text())
+    .then(html => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const blades = [...tmp.querySelectorAll('[data-slot]')]
+        .map(el => ({ slot: parseInt(el.dataset.slot, 10) }));
+      buildTabs(blades);
+    })
+    .catch(() => buildTabs([{slot: slot}]));
+
+  // WebSocket video
   let pendingMeta = null;
   let frameWindow = [];
-
   const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://')
-                + location.host + `/api/blade/${slot}/kvm/ws`;
+              + location.host + `/api/blade/${slot}/kvm/ws`;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   ws.onopen  = () => { $conn.textContent = 'open';   $conn.className = 'ok'; };
   ws.onclose = () => { $conn.textContent = 'closed'; $conn.className = 'err'; };
   ws.onerror = () => { $conn.textContent = 'error';  $conn.className = 'err'; };
-  // Fit the canvas to the available #screen area while preserving the
-  // chassis's native aspect ratio. Canvas elements don't honour
-  // object-fit, so we set CSS width/height in pixels each time a new
-  // frame's intrinsic size or the viewport changes.
+
   function fitCanvas() {
     const screen = document.getElementById('screen');
     const sw = screen.clientWidth, sh = screen.clientHeight;
@@ -252,15 +380,13 @@
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
       if (m.type === 'frame') pendingMeta = m;
-      else if (m.type === 'error') { $msg.textContent = m.message;
-                                     $msg.className = 'flex-1 text-right err'; }
-      else if (m.type === 'info')  { $msg.textContent = m.message;
-                                     $msg.className = 'flex-1 text-right dim'; }
+      else if (m.type === 'error') { $msg.textContent = m.message; $msg.className = 'stat err'; }
+      else if (m.type === 'info')  { $msg.textContent = m.message; $msg.className = 'stat'; }
       return;
     }
     const blob = new Blob([ev.data], {type: 'image/png'});
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
+    const url  = URL.createObjectURL(blob);
+    const img  = new Image();
     img.onload = () => {
       let resized = false;
       if (canvas.width !== img.naturalWidth)  { canvas.width  = img.naturalWidth;  resized = true; }
@@ -268,12 +394,12 @@
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       if (resized) fitCanvas();
-      if (pendingMeta) {
-        $fid.textContent = '0x' + pendingMeta.img_id.toString(16);
-        $fsz.textContent = pendingMeta.size + ' B';
-        if (pendingMeta.w && pendingMeta.h)
-          $fres.textContent = pendingMeta.w + '×' + pendingMeta.h;
-      }
+      frameNum += 1;
+      rxBytes  += ev.data.byteLength;
+      $fnum.textContent = frameNum;
+      $rx.textContent   = fmtBytes(rxBytes);
+      if (pendingMeta && pendingMeta.w && pendingMeta.h)
+        $fres.textContent = pendingMeta.w + '×' + pendingMeta.h;
       const now = performance.now();
       frameWindow.push(now);
       frameWindow = frameWindow.filter(t => now - t < 5000);
@@ -281,11 +407,18 @@
     };
     img.src = url;
   };
-  // Initial fit before any frame arrives, in case the layout already has a size.
   setTimeout(fitCanvas, 50);
 
-  // --- Keyboard + mouse capture -----------------------------------------
-  // KeyboardEvent.code → USB HID Usage ID (boot keyboard, page 0x07).
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  function toggleSide() {
+    document.getElementById('side').classList.toggle('collapsed');
+    setTimeout(fitCanvas, 220);
+  }
+
+  // Keyboard capture (USB HID)
   const HID_KEY = {
     KeyA:0x04, KeyB:0x05, KeyC:0x06, KeyD:0x07, KeyE:0x08, KeyF:0x09,
     KeyG:0x0A, KeyH:0x0B, KeyI:0x0C, KeyJ:0x0D, KeyK:0x0E, KeyL:0x0F,
@@ -315,49 +448,37 @@
     ControlLeft:0x01, ShiftLeft:0x02, AltLeft:0x04, MetaLeft:0x08,
     ControlRight:0x10, ShiftRight:0x20, AltRight:0x40, MetaRight:0x80,
   };
-  const pressed = new Set();   // HID usage codes currently down
+  const pressed = new Set();
   let modMask = 0;
-
   function sendKeyReport() {
     if (ws.readyState !== WebSocket.OPEN) return;
-    // Boot-protocol HID report: [mods, 0, k1..k6]. We pick the first 6
-    // pressed keys; rollover is rare for KVM use.
     const keys = Array.from(pressed).slice(0, 6);
     const report = [modMask, 0, 0, 0, 0, 0, 0, 0];
     for (let i = 0; i < keys.length; i++) report[2 + i] = keys[i];
-    ws.send(JSON.stringify({type: 'key', report: report}));
+    const payload = JSON.stringify({type: 'key', report: report});
+    ws.send(payload);
+    txBytes += payload.length; $tx.textContent = fmtBytes(txBytes);
   }
-
-  function clearKeys() {
-    pressed.clear();
-    modMask = 0;
-    sendKeyReport();
-  }
-
+  function clearKeys() { pressed.clear(); modMask = 0; sendKeyReport(); }
   canvas.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (e.code in HID_MOD) { modMask |= HID_MOD[e.code]; sendKeyReport(); return; }
     const hid = HID_KEY[e.code];
     if (hid !== undefined && !pressed.has(hid)) {
-      pressed.add(hid);
-      sendKeyReport();
+      pressed.add(hid); sendKeyReport();
     }
   });
   canvas.addEventListener('keyup', (e) => {
     e.preventDefault();
     if (e.code in HID_MOD) { modMask &= ~HID_MOD[e.code]; sendKeyReport(); return; }
     const hid = HID_KEY[e.code];
-    if (hid !== undefined) {
-      pressed.delete(hid);
-      sendKeyReport();
-    }
+    if (hid !== undefined) { pressed.delete(hid); sendKeyReport(); }
   });
-  // Lose focus → release all keys so a stuck modifier doesn't carry over.
-  canvas.addEventListener('blur', clearKeys);
-  window.addEventListener('blur', clearKeys);
+  canvas.addEventListener('blur',  clearKeys);
+  window.addEventListener('blur',  clearKeys);
 
-  // --- Mouse: absolute coordinates scaled to the iBMC's 0..3000 range. -
-  let mouseButtons = 0;  // bit0=L, bit1=R, bit2=M (Java mousData[0] layout)
+  // Mouse: absolute coords scaled to chassis 0..3000
+  let mouseButtons = 0;
   function sendMouse(ev, wheel = 0) {
     if (ws.readyState !== WebSocket.OPEN) return;
     const r = canvas.getBoundingClientRect();
@@ -366,39 +487,25 @@
     const cy = Math.max(0, Math.min(r.height, ev.clientY - r.top));
     const x = Math.round((cx / r.width)  * 3000);
     const y = Math.round((cy / r.height) * 3000);
-    ws.send(JSON.stringify({type: 'mouse', x: x, y: y,
-                            buttons: mouseButtons, wheel: wheel|0}));
+    const payload = JSON.stringify({type: 'mouse', x: x, y: y,
+                                    buttons: mouseButtons, wheel: wheel|0});
+    ws.send(payload);
+    txBytes += payload.length; $tx.textContent = fmtBytes(txBytes);
   }
-  // Browser button mapping → Java mousData[0] mapping:
-  //   browser 0 (left)   = bit0 (1)
-  //   browser 2 (right)  = bit1 (2)   [Java mousePressedPack: button==3 ⇒ |2]
-  //   browser 1 (middle) = bit2 (4)
   function browserBtnToBit(b) { return b === 0 ? 1 : (b === 1 ? 4 : (b === 2 ? 2 : 0)); }
-
   canvas.addEventListener('mousemove', (e) => sendMouse(e));
   canvas.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    canvas.focus();
-    mouseButtons |= browserBtnToBit(e.button);
-    sendMouse(e);
+    e.preventDefault(); canvas.focus();
+    mouseButtons |= browserBtnToBit(e.button); sendMouse(e);
   });
   canvas.addEventListener('mouseup', (e) => {
     e.preventDefault();
-    mouseButtons &= ~browserBtnToBit(e.button);
-    sendMouse(e);
+    mouseButtons &= ~browserBtnToBit(e.button); sendMouse(e);
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    // deltaY > 0 = scroll down. iBMC convention: positive = wheel-up,
-    // negative = wheel-down. Java's MouseWheelEvent.getWheelRotation()
-    // returns +/- rotations and we just pass that signed byte.
-    const w = e.deltaY > 0 ? -1 : 1;
-    sendMouse(e, w);
+    e.preventDefault(); sendMouse(e, e.deltaY > 0 ? -1 : 1);
   }, {passive: false});
-
-  // Focus hint: show when the canvas is unfocused so the user knows to click.
-  const $hint = document.getElementById('focus-hint');
   function refreshHint() {
     if (document.activeElement !== canvas) $hint.classList.add('show');
     else $hint.classList.remove('show');
@@ -407,13 +514,11 @@
   canvas.addEventListener('blur', refreshHint);
   setTimeout(refreshHint, 200);
 
-  // Hard-coded combos (most common: CAD, CAB, Ctrl+Alt+F1/F2). These build
-  // a transient HID report instead of going through the press/release path.
   function sendCombo(name) {
     const combos = {
-      cad:  {mods: 0x01|0x04, keys: [0x4C]},  // Ctrl+Alt+Del
-      cab:  {mods: 0x01|0x04, keys: [0x2A]},  // Ctrl+Alt+Backspace
-      caf1: {mods: 0x01|0x04, keys: [0x3A]},  // Ctrl+Alt+F1
+      cad:  {mods: 0x01|0x04, keys: [0x4C]},
+      cab:  {mods: 0x01|0x04, keys: [0x2A]},
+      caf1: {mods: 0x01|0x04, keys: [0x3A]},
       caf2: {mods: 0x01|0x04, keys: [0x3B]},
       esc:  {mods: 0,         keys: [0x29]},
       f2:   {mods: 0,         keys: [0x3B]},
@@ -428,10 +533,8 @@
     }, 80);
   }
 
-  // --- Power / boot / vmedia ---------------------------------------------
   async function powerAct(act) {
-    if (act !== 'on' && !confirm(`Apply power action "${act}" on slot ${slot}?`))
-      return;
+    if (act !== 'on' && !confirm(`Apply power action "${act}" on slot ${slot}?`)) return;
     $pout.textContent = `running power ${act}…`;
     const r = await fetch(`/api/blade/${slot}/power/${act}`, {method: 'POST'});
     const j = await r.json();
@@ -454,7 +557,6 @@
     const j = await r.json();
     $iout.textContent = `task ${j.task_id} started — see Background tasks on / `;
   }
-  // --- ISO picker (server-side directory browser) ------------------------
   function fmtSize(b) {
     if (b < 1024) return b + ' B';
     if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
@@ -475,10 +577,7 @@
         return;
       }
       j = await r.json();
-    } catch (e) {
-      $body.innerHTML = `<div class="empty">${e}</div>`;
-      return;
-    }
+    } catch (e) { $body.innerHTML = `<div class="empty">${e}</div>`; return; }
     $cwd.textContent = j.cwd;
     let html = '';
     if (j.parent) {
@@ -493,8 +592,7 @@
     for (const f of j.files) {
       const p = f.path.replace(/'/g, "\\'");
       html += `<div class="row iso" onclick="pickIso('${p}')">
-                 <span class="ic">💿</span>
-                 <span class="nm">${f.name}</span>
+                 <span class="ic">💿</span><span class="nm">${f.name}</span>
                  <span class="sz">${fmtSize(f.size)}</span></div>`;
     }
     if (!j.dirs.length && !j.files.length) {
@@ -505,7 +603,6 @@
   function openIsoPicker() {
     document.getElementById('iso-modal').classList.add('open');
     const cur = document.getElementById('iso-path-input').value.trim();
-    // start from the directory of the current value, if any
     let startDir = '';
     if (cur) {
       const i = cur.lastIndexOf('/');
@@ -521,23 +618,21 @@
     closeIsoPicker();
   }
 
-  // --- power-state indicator ---------------------------------------------
   async function refreshPwr() {
     const $pwr = document.getElementById('pwr');
     const $txt = $pwr.querySelector('.pwr-text');
     try {
       const r = await fetch(`/api/blade/${slot}/powerstate`);
       const j = await r.json();
-      $pwr.classList.remove('pwr-on', 'pwr-off', 'pwr-unknown');
-      $pwr.classList.add('pwr-' + j.state);
+      $pwr.classList.remove('on', 'off', 'unknown');
+      $pwr.classList.add(j.state);
       $txt.textContent = j.state.toUpperCase();
-    } catch (e) {
-      $pwr.classList.add('pwr-unknown');
-      $txt.textContent = 'ERR';
-    }
+      $txt.style.color = j.state === 'on'  ? 'var(--rudder-on)'
+                       : j.state === 'off' ? 'var(--rudder-off)'
+                       :                     'var(--rudder-na)';
+    } catch (e) { $txt.textContent = 'ERR'; }
   }
   refreshPwr();
-  // re-poll after any power button press, with a small delay
   function repollSoon() { setTimeout(refreshPwr, 4000); }
 
   async function releaseVmedia(hard) {
