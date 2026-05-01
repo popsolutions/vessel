@@ -124,6 +124,15 @@ class KvmClient:
         self.blade_no: int | None = None
         self.blade_state: BladeState | None = None
 
+        # Codec selector: when HMM_KVM_USE_NEWRLE is set, request the
+        # chassis NewRLE/JPEG ("FPEG") path during connect_blade and
+        # route frame data through kvm_core.decoder. Default (unset) =
+        # OldRLE BGR233 path that is known-good against this chassis.
+        self.use_newrle: bool = (
+            os.environ.get("HMM_KVM_USE_NEWRLE", "").lower()
+            in ("1", "true", "yes", "on")
+        )
+
         self._stop = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
 
@@ -204,10 +213,15 @@ class KvmClient:
         # Then monitorBlade(slot, 1) acts as a "send me current screen" hint —
         # without it, idle blades only produce sentinel deltas.
         self._send_blade_heartbeat()
-        self._send_connect_blade(slot, color_bit=0, fpeg_alg=False)
+        self._send_connect_blade(slot, color_bit=0, fpeg_alg=self.use_newrle)
         self._send_contr_rate(DEFAULT_FRAMERATE)
-        self._send_connect_blade(slot, color_bit=0, fpeg_alg=False)
+        self._send_connect_blade(slot, color_bit=0, fpeg_alg=self.use_newrle)
         self._send_monitor_blade(slot)
+        if self.use_newrle:
+            log.info(
+                "KVM codec: requesting NewRLE/JPEG (fpeg_alg=True) — "
+                "experimental path; unset HMM_KVM_USE_NEWRLE to revert."
+            )
 
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop, daemon=True, name=f"kvm-hb-{slot}")
@@ -615,6 +629,73 @@ def open_live_session(host: str, user: str, password: str, slot: int,
     return cli
 
 
+def _iter_pngs_newrle(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
+    """NewRLE/JPEG decode path — bypasses the OldRLE BGR233 pipeline.
+
+    The chassis NewRLE codec manages diffs internally via copy-from-tile
+    tokens (zip_type 5/6, rZipType 4..7), so there is no need for the
+    `is_diff` XOR step that the OldRLE path uses. We just decode each
+    payload through the stateful `NewRleDecoder` (preserves tile state
+    across frames so copy-from-prev works) and PNG-encode the
+    composed canvas.
+
+    Resolution changes are handled inside `NewRleDecoder.decode()` —
+    it re-inits its tile grid when (image_width, image_height) changes.
+    """
+    from PIL import Image as PILImage   # noqa: F401  (used implicitly)
+
+    from ..kvm_core.decoder.image_decoder import NewRleDecoder, compose_frame
+
+    decoder: NewRleDecoder | None = None
+    cur_w = cur_h = 0
+
+    n_perf = 0
+    perf_decode_ms = 0.0
+    perf_encode_ms = 0.0
+    perf_total_ms = 0.0
+
+    for img_id, w, h, is_diff, data in cli.frames():
+        t_start = time.monotonic()
+        if decoder is None or cur_w != w or cur_h != h:
+            decoder = NewRleDecoder(w, h)
+            cur_w, cur_h = w, h
+            log.info("KVM(NewRLE) resolution: %dx%d", w, h)
+
+        try:
+            blocks = decoder.decode(data, w, h)
+        except Exception as e:
+            log.warning(
+                "NewRLE decode failed for img 0x%02x (diff=%s, %d B): %s",
+                img_id, is_diff, len(data), e,
+            )
+            continue
+        t_decoded = time.monotonic()
+        perf_decode_ms += (t_decoded - t_start) * 1000.0
+
+        try:
+            frame = compose_frame(blocks, w, h)
+            buf = io.BytesIO()
+            frame.save(buf, format="PNG", optimize=False, compress_level=1)
+            yield img_id, buf.getvalue()
+            t_end = time.monotonic()
+            perf_encode_ms += (t_end - t_decoded) * 1000.0
+            perf_total_ms += (t_end - t_start) * 1000.0
+            n_perf += 1
+            if n_perf >= 30:
+                log.info(
+                    "KVM(NewRLE) perf (last 30): decode=%.1fms encode=%.1fms"
+                    " total=%.1fms ⇒ ~%.1f fps max",
+                    perf_decode_ms / n_perf, perf_encode_ms / n_perf,
+                    perf_total_ms / n_perf,
+                    1000.0 / max(perf_total_ms / n_perf, 0.01),
+                )
+                n_perf = 0
+                perf_decode_ms = perf_encode_ms = perf_total_ms = 0.0
+        except Exception as e:
+            log.warning("NewRLE encode failed for img 0x%02x: %s", img_id, e)
+            continue
+
+
 def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
     """Decode the live frame stream into PNGs, applying XOR for diffs.
 
@@ -629,7 +710,16 @@ def iter_pngs(cli: "KvmClient") -> Iterator[tuple[int, bytes]]:
     `BGR233_PALETTE`. That keeps the per-pixel work inside libpng — a
     640×480 frame encodes in ~5 ms instead of the ~275 ms an RGB
     expansion + PNG would take.
+
+    When `cli.use_newrle` is True (HMM_KVM_USE_NEWRLE env var), the
+    NewRLE/JPEG decode path takes over via `_iter_pngs_newrle`. That
+    path manages diffs internally via copy-from-tile tokens, so it
+    bypasses the BGR233 framebuffer + XOR pipeline entirely.
     """
+    if cli.use_newrle:
+        yield from _iter_pngs_newrle(cli)
+        return
+
     from PIL import Image as PILImage
 
     fb: bytearray | None = None
