@@ -79,6 +79,29 @@ def ycbcr2rgb(y: int, cb: int, cr: int) -> int:
     return (r << 16) | (g << 8) | b
 
 
+def bgr233_to_rgb888(bgr233: int) -> tuple[int, int, int]:
+    """Inverse of `rgb888_to_bgr233` — expand a single BGR233 byte.
+
+    Layout `BBGGGRRR`:
+      - B = bits 7..6 (2 bits)
+      - G = bits 5..3 (3 bits)
+      - R = bits 2..0 (3 bits)
+
+    Each component is replicated into the high bits so 0b111 → 0xFF
+    and 0b000 → 0x00 (standard bit-replication upscale used by VGA
+    palette hardware). Distinct from `kvm.codec_old.bgr233_to_rgb888`
+    which operates on a whole framebuffer; this single-pixel form is
+    used by `image_creater.palette_image()` to build PIL palettes.
+    """
+    b2 = (bgr233 >> 6) & 0x03
+    g3 = (bgr233 >> 3) & 0x07
+    r3 = bgr233 & 0x07
+    r8 = (r3 << 5) | (r3 << 2) | (r3 >> 1)
+    g8 = (g3 << 5) | (g3 << 2) | (g3 >> 1)
+    b8 = (b2 << 6) | (b2 << 4) | (b2 << 2) | b2
+    return r8, g8, b8
+
+
 def rgb888_to_bgr233(r: int, g: int, b: int) -> int:
     """Java's `ColorConverter.rgb888Tobgr233(byte, byte, byte)`.
 
