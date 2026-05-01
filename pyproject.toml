@@ -1,6 +1,6 @@
 [project]
 name = "hmm-client"
-version = "0.0.1"
+version = "0.0.2"
 description = "Linux-native client for Huawei E9000 HMM (Hardware Management Module) — replaces the legacy Java applet."
 requires-python = ">=3.11"
 dependencies = [
