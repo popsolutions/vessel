@@ -101,48 +101,55 @@
     <div class="hmm-card-head"><span class="hmm-card-title">2. Select targets and apply</span></div>
     <div class="hmm-card-body">
 
-      <div class="hmm-chassis hmm-mb-3">
+      <div class="hmm-cabinet-stage hmm-mb-3">
 
-        <div class="hmm-chassis-row">
-          <span class="hmm-chassis-label">Mgmt:</span>
-          <div class="hmm-chassis-cells cells-smm">
-            <div class="hmm-comp" data-target="bothsmm" data-kind="smm" onclick="toggleComponent(this)">
-              <div class="comp-label">SMM Pair (active + standby)</div>
-              <div class="comp-sub">smm + othersmm — flashed together</div>
-            </div>
+        <!-- Front view — compute blades. Pixel-perfect copy of the
+             original index.html cabinet layout, with click handlers
+             that toggle our 'selected' bladelist. -->
+        <div class="hmm-cabinet-side">
+          <div class="hmm-cabinet-front">
+            <div class="hmm-cabinet-front-1"><a class="hmm-cabinet-blade16" data-target="Slot8:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot8</span></a></div>
+            <div class="hmm-cabinet-front-2"><a class="hmm-cabinet-blade16" data-target="Slot16:fru0;" data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot16</span></a></div>
+            <div class="hmm-cabinet-front-3"><a class="hmm-cabinet-blade8_right" data-target="Slot15:fru0;" data-kind="ch222" onclick="return toggleSprite(this)"><span>Slot15</span></a></div>
+            <div class="hmm-cabinet-front-5"><a class="hmm-cabinet-blade8_right" data-target="Slot14:fru0;" data-kind="ch222" onclick="return toggleSprite(this)"><span>Slot14</span></a></div>
+            <div class="hmm-cabinet-front-7"><a class="hmm-cabinet-blade8_right" data-target="Slot13:fru0;" data-kind="ch222" onclick="return toggleSprite(this)"><span>Slot13</span></a></div>
+            <div class="hmm-cabinet-front-9" ><a class="hmm-cabinet-blade16" data-target="Slot4:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot4</span></a></div>
+            <div class="hmm-cabinet-front-10"><a class="hmm-cabinet-blade16" data-target="Slot12:fru0;" data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot12</span></a></div>
+            <div class="hmm-cabinet-front-11"><a class="hmm-cabinet-blade16" data-target="Slot3:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot3</span></a></div>
+            <div class="hmm-cabinet-front-12"><a class="hmm-cabinet-blade16" data-target="Slot11:fru0;" data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot11</span></a></div>
+            <div class="hmm-cabinet-front-13"><a class="hmm-cabinet-blade16" data-target="Slot2:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot2</span></a></div>
+            <div class="hmm-cabinet-front-14"><a class="hmm-cabinet-blade16" data-target="Slot10:fru0;" data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot10</span></a></div>
+            <div class="hmm-cabinet-front-15"><a class="hmm-cabinet-blade16" data-target="Slot1:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot1</span></a></div>
+            <div class="hmm-cabinet-front-16"><a class="hmm-cabinet-blade16" data-target="Slot9:fru0;"  data-kind="ch121" onclick="return toggleSprite(this)"><span>Slot9</span></a></div>
           </div>
+          <span class="hmm-cabinet-caption">Front view — Compute blades</span>
         </div>
 
-        <div class="hmm-chassis-row" style="align-items: stretch;">
-          <span class="hmm-chassis-label" style="padding-top:6px;">Blades:</span>
-          <div class="hmm-chassis-cells cells-blade">
-            {% for n in range(1, 17) %}
-              {% set populated = n in [1,2,3,4,8,9,10,11,12,16] %}
-              {% set storage = n in [13,14,15] %}
-              <div class="hmm-comp {% if not populated and not storage %}absent{% endif %}"
-                   data-target="Slot{{n}}:fru0;"
-                   data-kind="{% if storage %}ch222{% else %}ch121{% endif %}"
-                   {% if populated or storage %}onclick="toggleComponent(this)"{% endif %}>
-                <div class="comp-label">Slot {{n}}</div>
-                <div class="comp-sub">{% if storage %}CH222{% elif populated %}CH121{% else %}empty{% endif %}</div>
-              </div>
-            {% endfor %}
-          </div>
-        </div>
+        <!-- Back view — SMMs (collapse to bothsmm) + switches.
+             PSUs and fans aren't firmware-versionable so they're
+             rendered greyed-out (sprite shown for visual fidelity
+             but no click handler). -->
+        <div class="hmm-cabinet-side">
+          <div class="hmm-cabinet-back">
+            <!-- PSUs (read-only) -->
+            <div class="hmm-cabinet-back-pem-1"><a class="hmm-cabinet-pem disabled" title="PSU3 — no FW upgrade path"></a></div>
+            <div class="hmm-cabinet-back-pem-2"><a class="hmm-cabinet-pem disabled" title="PSU2"></a></div>
+            <div class="hmm-cabinet-back-pem-3"><a class="hmm-cabinet-pem disabled" title="PSU1"></a></div>
+            <div class="hmm-cabinet-back-pem-5"><a class="hmm-cabinet-pem disabled" title="PSU5"></a></div>
+            <div class="hmm-cabinet-back-pem-6"><a class="hmm-cabinet-pem disabled" title="PSU4"></a></div>
 
-        <div class="hmm-chassis-row">
-          <span class="hmm-chassis-label">Switch:</span>
-          <div class="hmm-chassis-cells cells-switch">
-            {% for s in ["Swi1", "Swi2", "Swi3", "Swi4"] %}
-              {% set present = s in ["Swi2", "Swi3"] %}
-              <div class="hmm-comp {% if not present %}absent{% endif %}"
-                   data-target="{{ s }}:fru0;" data-kind="switch"
-                   {% if present %}onclick="toggleComponent(this)"{% endif %}>
-                <div class="comp-label">{{ s }}</div>
-                <div class="comp-sub">{% if present %}CX310{% else %}empty{% endif %}</div>
-              </div>
-            {% endfor %}
+            <!-- SMMs — clicking either toggles the bothsmm pair (HMM
+                 only supports flashing both at once via 'bothsmm'). -->
+            <div class="hmm-cabinet-back-smm-1"><a class="hmm-cabinet-smm bothsmm-pair" data-target="bothsmm" data-kind="smm" onclick="return toggleSprite(this, 'bothsmm-pair')" title="MM2 — flashed together with MM1 via bothsmm"></a></div>
+            <div class="hmm-cabinet-back-smm-2"><a class="hmm-cabinet-smm bothsmm-pair" data-target="bothsmm" data-kind="smm" onclick="return toggleSprite(this, 'bothsmm-pair')" title="MM1 — flashed together with MM2 via bothsmm"></a></div>
+
+            <!-- Switches: Swi1/Swi4 absent on this chassis; Swi2/Swi3 are CX310. -->
+            <div class="hmm-cabinet-back-swi-1"><a class="hmm-cabinet-swi2 disabled" title="Swi1 — empty"></a></div>
+            <div class="hmm-cabinet-back-swi-2"><a class="hmm-cabinet-swi2" data-target="Swi2:fru0;" data-kind="switch" onclick="return toggleSprite(this)" title="Swi2 — CX310"></a></div>
+            <div class="hmm-cabinet-back-swi-3"><a class="hmm-cabinet-swi2" data-target="Swi3:fru0;" data-kind="switch" onclick="return toggleSprite(this)" title="Swi3 — CX310"></a></div>
+            <div class="hmm-cabinet-back-swi-4"><a class="hmm-cabinet-swi2 disabled" title="Swi4 — empty"></a></div>
           </div>
+          <span class="hmm-cabinet-caption">Rear view — SMMs · Switches · PSUs</span>
         </div>
 
       </div>
@@ -274,24 +281,42 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshPreflight();
 });
 
-function toggleComponent(el) {
-  if (el.classList.contains('absent')) return;
-  el.classList.toggle('selected');
+// Sprite-based picker: every clickable <a> on the chassis carries
+// a data-target. Click toggles 'board_sel' (matching original
+// cabinet.css class). Pair-class arg keeps both SMMs in sync since
+// HMM flashes them together via 'bothsmm'.
+function toggleSprite(el, pairClass) {
+  if (el.classList.contains('disabled')) return false;
+  const on = el.classList.toggle('board_sel');
+  if (pairClass) {
+    document.querySelectorAll('.' + pairClass).forEach(x => {
+      if (x !== el) x.classList.toggle('board_sel', on);
+    });
+  }
   recomputeBladelist();
+  return false;
 }
 function selectKind(kind) {
-  document.querySelectorAll('.hmm-comp').forEach(el => {
-    if (el.classList.contains('absent')) return;
-    if (el.dataset.kind === kind) el.classList.add('selected');
+  document.querySelectorAll('a[data-kind]').forEach(el => {
+    if (el.classList.contains('disabled')) return;
+    if (el.dataset.kind === kind) el.classList.add('board_sel');
   });
   recomputeBladelist();
 }
 function clearSelection() {
-  document.querySelectorAll('.hmm-comp.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('a.board_sel').forEach(el => el.classList.remove('board_sel'));
   recomputeBladelist();
 }
 function recomputeBladelist() {
-  const tokens = [...document.querySelectorAll('.hmm-comp.selected')].map(e => e.dataset.target);
+  // Dedupe — both SMM sprites point to 'bothsmm', count it once.
+  const seen = new Set();
+  const tokens = [];
+  document.querySelectorAll('a.board_sel[data-target]').forEach(el => {
+    const t = el.dataset.target;
+    if (seen.has(t)) return;
+    seen.add(t);
+    tokens.push(t);
+  });
   let list = '';
   if (tokens.length === 1 && tokens[0] === 'bothsmm') list = 'bothsmm';
   else if (tokens.length === 1) list = tokens[0];

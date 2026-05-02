@@ -1,37 +1,37 @@
-/* hmm — palette and chrome derived from the captured Huawei E9000
- * HMM web UI (en_css.css, cabinet.css from
- * discovery/api/20260502T193022Z/). Goal: preserve enough of the
- * original visual identity that an operator coming from the legacy
- * Java/Palemoon UI feels at home, while staying pure HTML+CSS so
- * we don't depend on Tailwind for layout primitives.
+/* hmm — dark palette (kept from prior chassis page) + chassis-image
+ * primitives derived from the captured Huawei E9000 HMM web UI
+ * (cabinet.css, en_css.css under discovery/api/20260502T193022Z/).
+ *
+ * The PNG sprites live under /static/cabinet/ and are exact bytes
+ * from the live chassis. Slot positions and sprite dimensions
+ * mirror the original CSS.
  */
 
 :root {
-  --hmm-bg:        #ececec;
-  --hmm-card-bg:   #ffffff;
-  --hmm-card-bd:   #d2d6dc;
-  --hmm-text:      #4d4d4d;
-  --hmm-text-soft: #888888;
-  --hmm-text-mute: #adadad;
-  --hmm-title:     #384568;     /* Huawei navy */
-  --hmm-title-soft:#5a6a90;
-  --hmm-link:      #2f5acc;
-  --hmm-link-hover:#1f3f9c;
-  --hmm-accent:    #c45f06;     /* rust accent for warnings/highlights */
-  --hmm-success:   #2f8f5d;
-  --hmm-danger:    #bf0000;
-  --hmm-warn:      #c08400;
-  --hmm-row-alt:   #f5f6f8;
-  --hmm-bar-bg:    #f0f1f4;
-  --hmm-fonts:     "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC",
-                   "Helvetica Neue", "Arial", "Tahoma", sans-serif;
+  --hmm-bg:        #0b1220;
+  --hmm-card-bg:   #111827;
+  --hmm-card-bd:   #1f2937;
+  --hmm-card-bd-2: #2a3548;
+  --hmm-text:      #e2e8f0;
+  --hmm-text-soft: #94a3b8;
+  --hmm-text-mute: #64748b;
+  --hmm-title:     #cbd5e1;
+  --hmm-link:      #5eead4;
+  --hmm-link-hover:#13beb7;
+  --hmm-accent:    #f0ab00;     /* pending amber, original page palette */
+  --hmm-success:   #13beb7;     /* rudder on */
+  --hmm-danger:    #e73b16;     /* rudder off */
+  --hmm-warn:      #f0ab00;
+  --hmm-row-alt:   #0f172a;
+  --hmm-bar-bg:    #1f2937;
+  --hmm-fonts:     ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+                   "Microsoft YaHei", "PingFang SC", monospace;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
-  margin: 0;
-  padding: 0;
+  margin: 0; padding: 0;
   background: var(--hmm-bg);
   color: var(--hmm-text);
   font-family: var(--hmm-fonts);
@@ -47,37 +47,34 @@ h1 { font-size: 16px; }
 h2 { font-size: 14px; }
 h3 { font-size: 13px; }
 
-/* Header bar shared across pages */
+/* Header bar — emerald brand on dark, navy-on-dark hover lines like
+ * the original Huawei top tabs but in our chosen palette. */
 .hmm-header {
-  background: linear-gradient(180deg, #3a4d76 0%, #2c3a5a 100%);
-  color: #ffffff;
+  background: linear-gradient(180deg, #111827 0%, #0b1220 100%);
+  border-bottom: 1px solid var(--hmm-card-bd);
+  color: var(--hmm-text);
   padding: 10px 22px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 2px solid #1c2a4a;
+  display: flex; align-items: center; justify-content: space-between;
   font-size: 12px;
 }
-.hmm-header a { color: #cfd6e6; }
-.hmm-header a:hover { color: #ffffff; text-decoration: none; }
+.hmm-header a { color: var(--hmm-text-soft); }
+.hmm-header a:hover { color: var(--hmm-link); text-decoration: none; }
 .hmm-brand {
   font-weight: 700; font-size: 15px; letter-spacing: 0.4px;
-  color: #ffffff;
+  color: var(--hmm-link);
 }
-.hmm-brand:hover { color: #cfd6e6; }
-.hmm-host { color: #b9c2d6; font-size: 12px; }
+.hmm-brand:hover { color: var(--hmm-link-hover); }
+.hmm-host { color: var(--hmm-text-soft); font-size: 12px; }
 
 .hmm-nav { display: flex; align-items: center; gap: 18px; }
 .hmm-nav a { padding: 4px 0; }
-.hmm-nav a.active { color: #ffffff; border-bottom: 2px solid #c45f06; }
+.hmm-nav a.active { color: var(--hmm-text); border-bottom: 2px solid var(--hmm-accent); }
 
 main.hmm-main {
   max-width: 1200px;
   margin: 16px auto;
   padding: 0 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: flex; flex-direction: column; gap: 14px;
 }
 
 /* Card panels */
@@ -85,15 +82,12 @@ main.hmm-main {
   background: var(--hmm-card-bg);
   border: 1px solid var(--hmm-card-bd);
   border-radius: 4px;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.03);
 }
 .hmm-card-head {
   padding: 9px 14px;
   border-bottom: 1px solid var(--hmm-card-bd);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #f7f8fa;
+  display: flex; align-items: center; justify-content: space-between;
+  background: #0f172a;
 }
 .hmm-card-title { color: var(--hmm-title); font-weight: 600; font-size: 13px; }
 .hmm-card-body { padding: 12px 14px; }
@@ -102,60 +96,59 @@ main.hmm-main {
 .hmm-btn {
   font-family: inherit; font-size: 12px;
   padding: 5px 12px; border-radius: 3px;
-  border: 1px solid transparent;
+  border: 1px solid var(--hmm-card-bd-2);
   cursor: pointer;
-  background: #f0f0f0;
+  background: #1f2937;
   color: var(--hmm-text);
-  border-color: #c5c8d0;
   transition: background 120ms, border-color 120ms;
 }
-.hmm-btn:hover { background: #e6e8ec; border-color: #9aa3b3; }
-.hmm-btn:disabled { background: #f4f5f7; color: var(--hmm-text-mute); cursor: not-allowed; border-color: #d8dbe3; }
+.hmm-btn:hover { background: #2a3548; border-color: #3b4a64; }
+.hmm-btn:disabled { background: #131b2c; color: var(--hmm-text-mute); cursor: not-allowed; border-color: #1f2937; }
 .hmm-btn-primary {
-  background: linear-gradient(180deg, #4262a8 0%, #2f4d8c 100%);
-  color: #ffffff; border-color: #25437b;
+  background: linear-gradient(180deg, #13beb7 0%, #0e9a94 100%);
+  color: #062e2c; border-color: #0a7a76; font-weight: 600;
 }
-.hmm-btn-primary:hover { background: linear-gradient(180deg, #4d6cb6 0%, #3a59a0 100%); }
+.hmm-btn-primary:hover { background: linear-gradient(180deg, #1ad6cf 0%, #13beb7 100%); }
+.hmm-btn-primary:disabled { background: #131b2c; color: var(--hmm-text-mute); border-color: #1f2937; }
 .hmm-btn-danger {
-  background: linear-gradient(180deg, #c84545 0%, #a83434 100%);
-  color: #ffffff; border-color: #8c2929;
+  background: linear-gradient(180deg, #e73b16 0%, #b42b0d 100%);
+  color: #ffffff; border-color: #8a200a; font-weight: 600;
 }
-.hmm-btn-danger:hover { background: linear-gradient(180deg, #d05050 0%, #b83a3a 100%); }
+.hmm-btn-danger:hover { background: linear-gradient(180deg, #ee4a26 0%, #c63217 100%); }
+.hmm-btn-danger:disabled { background: #131b2c; color: var(--hmm-text-mute); border-color: #1f2937; }
 .hmm-btn-ghost { background: transparent; border-color: transparent; color: var(--hmm-link); padding: 2px 6px; }
-.hmm-btn-ghost:hover { background: #eef0f5; text-decoration: none; }
+.hmm-btn-ghost:hover { background: #1f2937; text-decoration: none; }
 
 /* Form */
 .hmm-input {
   font-family: inherit; font-size: 12px;
   padding: 5px 8px;
-  border: 1px solid #c5c8d0;
-  background: #ffffff;
+  border: 1px solid var(--hmm-card-bd-2);
+  background: #0f172a;
   color: var(--hmm-text);
   border-radius: 3px;
   outline: none;
 }
-.hmm-input:focus { border-color: var(--hmm-link); box-shadow: 0 0 0 2px rgba(47,90,204,0.15); }
+.hmm-input:focus { border-color: var(--hmm-link); box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.18); }
 
 /* Tables */
 table.hmm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.hmm-table thead th {
   text-align: left; padding: 6px 10px;
-  background: #eef0f5; color: var(--hmm-title);
+  background: #0f172a; color: var(--hmm-title);
   border-bottom: 1px solid var(--hmm-card-bd);
   font-weight: 600;
 }
 table.hmm-table tbody td {
-  padding: 6px 10px; border-bottom: 1px solid #ecedf1;
+  padding: 6px 10px; border-bottom: 1px solid var(--hmm-card-bd);
   vertical-align: top;
 }
-table.hmm-table tbody tr:hover td { background: #f6f8fb; }
+table.hmm-table tbody tr:hover td { background: #131b2c; }
 table.hmm-table tbody tr.section-row td {
-  background: #e7ebf3;
-  color: var(--hmm-title);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.3px;
+  background: #0d1729;
+  color: var(--hmm-link);
+  font-weight: 600; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 0.3px;
 }
 table.hmm-table tbody tr.muted td { opacity: 0.45; }
 
@@ -163,62 +156,132 @@ table.hmm-table tbody tr.muted td { opacity: 0.45; }
 .hmm-pill {
   display: inline-block; padding: 1px 8px;
   border-radius: 9px; font-size: 11px; line-height: 16px;
-  border: 1px solid transparent;
-  font-weight: 500;
+  border: 1px solid transparent; font-weight: 500;
 }
-.hmm-pill-ok    { background: #e0f2e8; color: #1f6b46; border-color: #b1dcc4; }
-.hmm-pill-info  { background: #e7ecf6; color: #2c4283; border-color: #b9c4dd; }
-.hmm-pill-warn  { background: #fdf2dd; color: #7a5a00; border-color: #efd590; }
-.hmm-pill-err   { background: #fbe2e2; color: #8c1f1f; border-color: #e7b1b1; }
-.hmm-pill-mute  { background: #ecedef; color: #6a6a6a; border-color: #d4d6db; }
+.hmm-pill-ok    { background: rgba(19,190,183,.14); color: #5eead4; border-color: rgba(19,190,183,.4); }
+.hmm-pill-info  { background: rgba(94,114,255,.12); color: #a3b5ff; border-color: rgba(94,114,255,.4); }
+.hmm-pill-warn  { background: rgba(240,171,0,.14);  color: #fde68a; border-color: rgba(240,171,0,.5); }
+.hmm-pill-err   { background: rgba(231,59,22,.14);  color: #fca5a5; border-color: rgba(231,59,22,.45); }
+.hmm-pill-mute  { background: rgba(148,163,184,.10);color: #cbd5e1; border-color: rgba(148,163,184,.4); }
 
-/* Chassis-shaped target picker */
-.hmm-chassis {
-  background: #f8f9fb;
-  border: 1px solid var(--hmm-card-bd);
-  border-radius: 4px;
-  padding: 12px;
-}
-.hmm-chassis-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.hmm-chassis-row:last-child { margin-bottom: 0; }
-.hmm-chassis-label { width: 70px; text-align: right; font-size: 11px; color: var(--hmm-text-soft); }
-.hmm-chassis-cells { display: grid; gap: 4px; flex: 1; }
-.hmm-chassis-cells.cells-blade { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-.hmm-chassis-cells.cells-switch { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.hmm-chassis-cells.cells-smm { grid-template-columns: 1fr; }
+/* ===== chassis sprites — backgrounds + per-slot absolute coords =====
+ * Pixel-perfect copy of the original cabinet.css. Sprites live
+ * under /static/cabinet/. No invented dimensions — every value
+ * came from the captured CSS. */
 
-.hmm-comp {
-  background: #ffffff; border: 1px solid #c5c8d0; border-radius: 3px;
-  padding: 6px 8px; cursor: pointer;
-  transition: border-color 120ms, background 120ms;
-  user-select: none; text-align: center;
+.hmm-cabinet-stage {
+  display: flex; gap: 28px; justify-content: center; padding: 12px 0;
+  font-family: Arial, Helvetica, sans-serif;
 }
-.hmm-comp:hover { border-color: var(--hmm-link); background: #f5f8ff; }
-.hmm-comp.selected {
-  background: linear-gradient(180deg, #4262a8 0%, #2f4d8c 100%);
-  color: #ffffff; border-color: #25437b;
-  box-shadow: inset 0 0 0 1px #ffffff;
+.hmm-cabinet-side {
+  display: inline-flex; flex-direction: column; align-items: center;
+  gap: 4px; color: var(--hmm-text-soft);
 }
-.hmm-comp.selected .comp-sub { color: #cfd6e6; }
-.hmm-comp.absent {
-  background: repeating-linear-gradient(
-    45deg, #f0f1f4, #f0f1f4 6px, #e6e8ec 6px, #e6e8ec 12px
-  );
-  color: #b3b6bf; cursor: not-allowed; border-style: dashed;
+.hmm-cabinet-front {
+  display: inline-block; width: 237px; height: 272px;
+  background: url(/static/cabinet/cabinet_front.png) 0 0 no-repeat;
+  position: relative;
 }
-.hmm-comp.absent:hover { border-color: #c5c8d0; }
-.comp-label { font-size: 12px; font-weight: 600; }
-.comp-sub   { font-size: 10px; color: var(--hmm-text-soft); margin-top: 1px; }
+.hmm-cabinet-back {
+  display: inline-block; width: 237px; height: 272px;
+  background: url(/static/cabinet/cabinet_back.png) 0 0 no-repeat;
+  position: relative;
+}
+.hmm-cabinet-front a, .hmm-cabinet-back a {
+  color: #ffffff; font-size: 10px; font-weight: 400; line-height: 13px;
+  text-decoration: none; -webkit-text-size-adjust: none;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.hmm-cabinet-front a > span, .hmm-cabinet-back a > span {
+  display: inline-block; vertical-align: text-bottom;
+}
+.hmm-cabinet-caption { font-size: 11px; color: var(--hmm-text-soft); margin-top: 4px; }
+
+/* Compute blades — full-width sprite (CH222 storage) and half-width
+ * sprite (CH121 compute). 'on' state highlights when selected. */
+a.hmm-cabinet-blade8_right {
+  background: url(/static/cabinet/blade8_right.png) 0 0 no-repeat;
+  width: 202px; height: 13px;
+  padding: 17px 0 0 5px; display: inline-block; text-align: right;
+}
+.board_sel a.hmm-cabinet-blade8_right { background: url(/static/cabinet/blade8_right_on.png) 0 0 no-repeat; }
+a.hmm-cabinet-blade8_right > span { color: #fff; vertical-align: bottom; }
+
+a.hmm-cabinet-blade16 {
+  background: url(/static/cabinet/blade16.png) 0 0 no-repeat;
+  width: 98px; height: 13px;
+  padding: 17px 0 0 5px; display: inline-block;
+}
+.board_sel a.hmm-cabinet-blade16 { background: url(/static/cabinet/blade16_on.png) 0 0 no-repeat; }
+a.hmm-cabinet-blade16 > span { color: #fff; vertical-align: bottom; text-align: left; }
+
+/* Front-view absolute slot positions (verbatim from cabinet.css).
+ * Two columns (left=15, right=119); 8 rows from top=14 step 30. */
+.hmm-cabinet-front-1  { position: absolute; top:  14px; left:  15px; }
+.hmm-cabinet-front-2  { position: absolute; top:  14px; left: 119px; }
+.hmm-cabinet-front-3  { position: absolute; top:  44px; left:  15px; }
+.hmm-cabinet-front-4  { position: absolute; top:  44px; left: 119px; }
+.hmm-cabinet-front-5  { position: absolute; top:  74px; left:  15px; }
+.hmm-cabinet-front-6  { position: absolute; top:  74px; left: 119px; }
+.hmm-cabinet-front-7  { position: absolute; top: 104px; left:  15px; }
+.hmm-cabinet-front-8  { position: absolute; top: 104px; left: 119px; }
+.hmm-cabinet-front-9  { position: absolute; top: 134px; left:  15px; }
+.hmm-cabinet-front-10 { position: absolute; top: 134px; left: 119px; }
+.hmm-cabinet-front-11 { position: absolute; top: 164px; left:  15px; }
+.hmm-cabinet-front-12 { position: absolute; top: 164px; left: 119px; }
+.hmm-cabinet-front-13 { position: absolute; top: 194px; left:  15px; }
+.hmm-cabinet-front-14 { position: absolute; top: 194px; left: 119px; }
+.hmm-cabinet-front-15 { position: absolute; top: 224px; left:  15px; }
+.hmm-cabinet-front-16 { position: absolute; top: 224px; left: 119px; }
+
+/* Rear-view: PSUs (left/right columns), SMMs (centre), switches and fans. */
+a.hmm-cabinet-pem {
+  background: url(/static/cabinet/pem.png) 0 0 no-repeat;
+  width: 21px; height: 60px; text-align: center; display: inline-block;
+}
+a.hmm-cabinet-smm {
+  background: url(/static/cabinet/smm.png) 0 0 no-repeat;
+  width: 17px; height: 102px; text-align: center; display: inline-block;
+}
+a.hmm-cabinet-swi2 {
+  background: url(/static/cabinet/swi2.png) 0 0 no-repeat;
+  width: 15px; height: 204px; text-align: center; display: inline-block;
+}
+.board_sel a.hmm-cabinet-swi2 { background: url(/static/cabinet/swi2_on.png) 0 0 no-repeat; }
+a.hmm-cabinet-fan1 {
+  background: url(/static/cabinet/fan1.png) 0 0 no-repeat;
+  width: 40px; height: 40px; display: inline-block; text-align: center;
+}
+.board_sel a.hmm-cabinet-fan1 { background: url(/static/cabinet/fan1_on.png) 0 0 no-repeat; }
+
+.hmm-cabinet-back-pem-1 { position: absolute; top:  13px; left:  15px; }
+.hmm-cabinet-back-pem-2 { position: absolute; top:  87px; left:  15px; }
+.hmm-cabinet-back-pem-3 { position: absolute; top: 161px; left:  15px; }
+.hmm-cabinet-back-pem-4 { position: absolute; top:  13px; left: 201px; }
+.hmm-cabinet-back-pem-5 { position: absolute; top:  87px; left: 201px; }
+.hmm-cabinet-back-pem-6 { position: absolute; top: 161px; left: 201px; }
+.hmm-cabinet-back-smm-1 { position: absolute; top:  54px; left:  78px; }
+.hmm-cabinet-back-smm-2 { position: absolute; top: 156px; left:  78px; }
+.hmm-cabinet-back-swi-1 { position: absolute; top:  54px; left:  96px; }
+.hmm-cabinet-back-swi-2 { position: absolute; top:  54px; left: 112px; }
+.hmm-cabinet-back-swi-3 { position: absolute; top:  54px; left: 128px; }
+.hmm-cabinet-back-swi-4 { position: absolute; top:  54px; left: 144px; }
+
+/* SMM/Swi/PEM hover/select tinting via filter — we kept original
+ * sprites identical to chassis, so the 'selected' state uses the
+ * '_on' variants pulled from captures (where present). */
+a.board_sel { filter: brightness(1.25) saturate(1.4); }
+a.disabled  { filter: grayscale(0.7) opacity(0.45); pointer-events: none; }
 
 /* Drop zone */
 .hmm-drop {
-  border: 2px dashed #c5c8d0; border-radius: 5px;
+  border: 2px dashed var(--hmm-card-bd-2); border-radius: 5px;
   padding: 20px; text-align: center;
-  background: #f8f9fb; color: var(--hmm-text-soft);
+  background: #0f172a; color: var(--hmm-text-soft);
   cursor: pointer; transition: border-color 120ms, background 120ms;
 }
-.hmm-drop:hover { border-color: var(--hmm-link); background: #f0f4ff; }
-.hmm-drop.armed { border-color: var(--hmm-success); background: #ecf6f0; color: var(--hmm-success); }
+.hmm-drop:hover { border-color: var(--hmm-link); background: #131b2c; }
+.hmm-drop.armed { border-color: var(--hmm-success); background: rgba(19,190,183,.08); color: var(--hmm-success); }
 .hmm-drop-icon { font-size: 22px; display: block; color: var(--hmm-text-mute); margin-bottom: 4px; }
 
 /* Progress */
@@ -230,20 +293,21 @@ table.hmm-table tbody tr.muted td { opacity: 0.45; }
 .hmm-alert {
   padding: 8px 12px; border-radius: 3px;
   border-left: 3px solid var(--hmm-link);
-  background: #eef2fb; font-size: 12px;
+  background: rgba(94, 234, 212, 0.06); font-size: 12px;
+  color: var(--hmm-text);
 }
-.hmm-alert-success { background: #ecf6f0; border-left-color: var(--hmm-success); color: #1f6b46; }
-.hmm-alert-warn    { background: #fdf2dd; border-left-color: var(--hmm-warn);    color: #7a5a00; }
-.hmm-alert-error   { background: #fbe2e2; border-left-color: var(--hmm-danger);  color: #8c1f1f; }
+.hmm-alert-success { background: rgba(19,190,183,.12); border-left-color: var(--hmm-success); color: #5eead4; }
+.hmm-alert-warn    { background: rgba(240,171,0,.12); border-left-color: var(--hmm-warn);    color: #fde68a; }
+.hmm-alert-error   { background: rgba(231,59,22,.12); border-left-color: var(--hmm-danger);  color: #fca5a5; }
 
 /* Code blocks */
-code, pre { font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: 11.5px; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
 pre.hmm-yaml {
-  background: #f7f8fa; border: 1px solid var(--hmm-card-bd);
+  background: #0f172a; border: 1px solid var(--hmm-card-bd);
   border-radius: 3px; padding: 10px; max-height: 50vh;
-  overflow: auto; white-space: pre-wrap;
+  overflow: auto; white-space: pre-wrap; color: var(--hmm-text);
 }
-.hmm-mono { font-family: "SF Mono", "Menlo", "Consolas", monospace; }
+.hmm-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
 /* Utility */
 .hmm-row { display: flex; align-items: center; gap: 10px; }
