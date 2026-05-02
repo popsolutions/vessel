@@ -2,59 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>hmm — Snapshots ({{ host }})</title>
+  <title>HMM — Snapshots ({{ host }})</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .card { background: #111827; border: 1px solid #1f2937; }
-  </style>
+  <link rel="stylesheet" href="/static/hmm.css">
 </head>
-<body class="text-sm">
+<body>
 
-<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-  <div class="flex items-center gap-4">
-    <a href="/" class="text-emerald-400 font-bold hover:underline">hmm</a>
-    <span class="text-slate-400">Snapshots @</span>
-    <span class="text-slate-200">{{ host }}</span>
+<header class="hmm-header">
+  <div class="hmm-row">
+    <a href="/" class="hmm-brand">HMM</a>
+    <span class="hmm-host">Huawei E9000 · {{ host }}</span>
   </div>
-  <div class="flex items-center gap-4 text-xs">
-    <a href="/health" class="text-slate-300 hover:text-emerald-400">health →</a>
-    <a href="/firmware-web" class="text-slate-300 hover:text-emerald-400">firmware →</a>
-    <span class="text-slate-500">{{ now }}</span>
-  </div>
+  <nav class="hmm-nav">
+    <a href="/">Chassis</a>
+    <a href="/firmware-web">Firmware</a>
+    <a href="/health">Health</a>
+    <a href="/snapshots" class="active">Snapshots</a>
+    <span class="hmm-mute">{{ now }}</span>
+  </nav>
 </header>
 
-<main class="px-6 py-4 space-y-4 max-w-4xl">
-  <section class="card rounded p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-slate-300 font-bold">Snapshots</h2>
-      <span class="text-xs text-slate-500">{{ snapshots_dir }}</span>
+<main class="hmm-main">
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Snapshots</span>
+      <span class="hmm-mute hmm-tiny">{{ snapshots_dir }}</span>
     </div>
+    <div class="hmm-card-body">
     {% if not snapshots %}
-      <div class="text-xs text-slate-500">No snapshots taken yet. Run <code>hmm snapshot</code> or trigger an apply with snapshot-first.</div>
+      <div class="hmm-muted hmm-tiny">No snapshots taken yet. Run <code>hmm snapshot</code> or trigger an apply with snapshot-first.</div>
     {% else %}
-    <table class="w-full text-xs border-collapse">
+    <table class="hmm-table">
       <thead>
-        <tr class="text-slate-400 border-b border-slate-800">
-          <th class="text-left py-1 pr-3">Snapshot ID (UTC)</th>
-          <th class="text-right py-1 pr-3">Size</th>
-          <th class="text-left py-1">Open</th>
+        <tr>
+          <th>Snapshot ID (UTC)</th>
+          <th style="text-align:right;">Size</th>
+          <th>Open</th>
         </tr>
       </thead>
       <tbody>
         {% for s in snapshots %}
-        <tr class="border-b border-slate-900/60">
-          <td class="py-1 pr-3 text-slate-200">{{ s.id }}</td>
-          <td class="py-1 pr-3 text-right text-slate-300">{{ "{:,}".format(s.size) }} B</td>
-          <td class="py-1">
-            <a href="/snapshots/{{ s.id }}" class="text-emerald-400 hover:underline">view →</a>
-          </td>
+        <tr>
+          <td><b class="hmm-mono">{{ s.id }}</b></td>
+          <td class="hmm-mono" style="text-align:right;">{{ "{:,}".format(s.size) }} B</td>
+          <td><a href="/snapshots/{{ s.id }}">view →</a></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% endif %}
+    </div>
   </section>
 </main>
 
