@@ -32,6 +32,12 @@ re/decompiled/
 # session-scoped session IDs / encrypted blobs)
 captures/
 
+# mkdocs build output
+site/
+
+# Local audit log (default path; see audit.py — VESSEL_AUDIT_LOG env override)
+audit.log
+
 # Claude Code local agent state
 .claude/
 vessel_popsolutions.tar.xz

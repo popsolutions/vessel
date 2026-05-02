@@ -27,6 +27,11 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
 ]
+re = [
+    "mitmproxy>=10.3",
+    "selenium>=4.20",
+    "beautifulsoup4>=4.12",
+]
 
 [project.scripts]
 hmm = "hmm_client.cli:app"
