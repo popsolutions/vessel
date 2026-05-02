@@ -528,6 +528,158 @@ def switch_set_trunk_port(
 app.add_typer(switch_app, name="switch")
 
 
+# --- firmware sub-app: bulk Redfish UpdateService ---
+firmware_app = typer.Typer(no_args_is_help=True, help="Bulk firmware via Redfish UpdateService")
+
+
+@firmware_app.command("list")
+def firmware_list_cmd(
+    targets: str = typer.Argument(
+        ...,
+        help='Comma-sep "kind:id:host:user[:pw]" tuples (e.g. "blade:slot1:172.31.1.11:root")',
+    ),
+) -> None:
+    """List Redfish UpdateService inventory for one or more targets."""
+    from . import firmware as fw
+
+    parsed: list[tuple[str, str, str, str, str | None]] = []
+    for spec in targets.split(","):
+        parts = spec.split(":")
+        if len(parts) < 4:
+            console.print(f"[red]bad target spec: {spec!r}[/]")
+            raise typer.Exit(1)
+        kind, id_, host, user, *rest = parts
+        pw = rest[0] if rest else None
+        parsed.append((kind, id_, host, user, pw))  # type: ignore[arg-type]
+
+    found = fw.list_targets(hosts=parsed)
+    t = Table(title=f"Firmware inventory ({len(found)} components)")
+    t.add_column("Kind")
+    t.add_column("ID")
+    t.add_column("Host")
+    t.add_column("Component")
+    t.add_column("Version")
+    t.add_column("Ready")
+    for ft in found:
+        t.add_row(
+            ft.kind,
+            ft.id,
+            ft.redfish_host,
+            ft.component,
+            ft.current_version,
+            "[green]yes[/]" if ft.is_ready else "[red]no[/]",
+        )
+    console.print(t)
+
+
+@firmware_app.command("plan")
+def firmware_plan_cmd(
+    image_uri: str = typer.Argument(..., help="HTTP(S) URL where the image is hosted"),
+    targets: str = typer.Argument(
+        ...,
+        help='Comma-sep "kind:id:host:user[:pw]" tuples (same format as `list`)',
+    ),
+    strategy: str = typer.Option("rolling", "--strategy", "-s", help="rolling|canary|all-at-once"),
+    batch_size: int = typer.Option(4, "--batch-size", "-b"),
+    out: str = typer.Option("", "--out", "-o", help="Save plan as JSON to this path"),
+) -> None:
+    """Build a firmware plan (dry-run) and print/save it."""
+    import json as _json
+    from pathlib import Path
+
+    from . import firmware as fw
+
+    parsed: list[tuple[str, str, str, str, str | None]] = []
+    for spec in targets.split(","):
+        parts = spec.split(":")
+        kind, id_, host, user, *rest = parts
+        pw = rest[0] if rest else None
+        parsed.append((kind, id_, host, user, pw))  # type: ignore[arg-type]
+
+    found = fw.list_targets(hosts=parsed)
+    if not found:
+        console.print("[red]no targets discovered[/]")
+        raise typer.Exit(1)
+
+    p = fw.plan(image_uri, found, strategy=strategy, batch_size=batch_size)  # type: ignore[arg-type]
+
+    payload = p.to_dict()
+    if out:
+        Path(out).write_text(_json.dumps(payload, indent=2))
+        console.print(f"[green]plan saved → {out}[/]")
+    else:
+        console.print_json(data=payload)
+    if p.blockers:
+        console.print(f"[red]plan has {len(p.blockers)} blocker(s); apply will refuse[/]")
+        raise typer.Exit(2)
+
+
+@firmware_app.command("apply")
+def firmware_apply_cmd(
+    plan_file: str = typer.Argument(..., help="Path to plan.json from `plan --out`"),
+    user: str = typer.Option(..., "--user", "-u"),
+    password: str = typer.Option(..., "--password", "-p"),
+    abort_on_failure: bool = typer.Option(True, "--abort-on-failure/--keep-going"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Apply a previously-built plan."""
+    import json as _json
+    from pathlib import Path
+
+    from . import firmware as fw
+
+    raw = _json.loads(Path(plan_file).read_text())
+    targets = [
+        fw.FirmwareTarget(
+            kind=t["kind"],
+            id=t["id"],
+            redfish_host=t["host"],
+            component=t["component"],
+            current_version=t["current_version"],
+            update_uri="/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate",
+            is_ready=t["ready"],
+        )
+        for w in raw["waves"]
+        for t in w["targets"]
+    ]
+    p = fw.FirmwarePlan(
+        image_uri=raw["image_uri"],
+        strategy=raw["strategy"],
+        waves=[fw.FirmwareWave(targets=targets)],  # rebuilt below
+        blockers=raw.get("blockers", []),
+        canary_dwell_s=raw.get("canary_dwell_s", 60),
+    )
+    # Reconstruct waves preserving original boundaries
+    p.waves = [
+        fw.FirmwareWave(
+            targets=[t2 for t2 in targets if t2.id == t["id"] and t2.component == t["component"]]
+        )
+        for w in raw["waves"]
+        for t in w["targets"]
+    ]
+
+    console.print(
+        f"[yellow]applying plan: {p.target_count} target(s), "
+        f"{len(p.waves)} wave(s), strategy={p.strategy}[/]"
+    )
+    if not yes and not typer.confirm("apply?", default=False):
+        raise typer.Exit(1)
+
+    results = fw.apply(
+        p,
+        user=user,
+        password=password,
+        abort_on_first_failure=abort_on_failure,
+    )
+    ok = sum(1 for r in results if r.success)
+    console.print(f"[bold]done[/]  ok={ok}  failed={len(results) - ok}")
+    if any(not r.success for r in results):
+        raise typer.Exit(2)
+
+
+app.add_typer(firmware_app, name="firmware")
+
+
 @app.command("notify")
 def notify_cmd(
     message: str = typer.Argument(..., help="Text to send"),
