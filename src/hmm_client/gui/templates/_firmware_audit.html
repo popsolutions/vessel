@@ -9,6 +9,7 @@
       <th class="text-left py-1 pr-3">Op</th>
       <th class="text-left py-1 pr-3">Target</th>
       <th class="text-left py-1 pr-3">Result</th>
+      <th class="text-left py-1 pr-3">Snapshot</th>
       <th class="text-left py-1">Evidence</th>
     </tr>
   </thead>
@@ -24,6 +25,13 @@
         {% elif r.result == "failed" %}<span class="pill pill-err">failed</span>
         {% elif r.result == "in-progress" %}<span class="pill pill-na" style="color:#fde68a;border-color:rgba(240,171,0,.5);background:rgba(240,171,0,.15)">in-progress</span>
         {% else %}<span class="pill pill-na">{{ r.result }}</span>{% endif %}
+      </td>
+      <td class="py-1 pr-3 whitespace-nowrap">
+        {% if r.snapshot_id %}
+          <a href="/snapshots/{{ r.snapshot_id }}" class="text-emerald-400 hover:underline" target="_blank">{{ r.snapshot_id }}</a>
+        {% else %}
+          <span class="text-slate-600">—</span>
+        {% endif %}
       </td>
       <td class="py-1 text-slate-400">
         {% if r.evidence %}

@@ -1071,6 +1071,77 @@ def firmware_web_cancel(
     return JSONResponse({"ok": True})
 
 
+@app.get("/snapshots", response_class=HTMLResponse)
+def snapshots_index(request: Request) -> HTMLResponse:
+    """List snapshot directories under SNAPSHOTS_DIR."""
+    s = _settings(request)
+    items: list[dict[str, Any]] = []
+    if s.snapshots_dir.is_dir():
+        for entry in sorted(
+            (p for p in s.snapshots_dir.iterdir() if p.is_dir()),
+            key=lambda p: p.name,
+            reverse=True,
+        ):
+            try:
+                size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            except OSError:
+                size = 0
+            items.append({"id": entry.name, "size": size})
+    return templates.TemplateResponse(
+        request,
+        "snapshots.html",
+        {
+            "host": s.hmm_host,
+            "snapshots": items,
+            "snapshots_dir": str(s.snapshots_dir),
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
+@app.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
+def snapshot_detail(request: Request, snapshot_id: str) -> HTMLResponse:
+    """Show the contents of one snapshot: manifest + file tree."""
+    s = _settings(request)
+    # Reject any path traversal attempts.
+    if "/" in snapshot_id or ".." in snapshot_id:
+        raise HTTPException(400, "invalid snapshot id")
+    snap_dir = (s.snapshots_dir / snapshot_id).resolve()
+    if not str(snap_dir).startswith(str(s.snapshots_dir.resolve())) or not snap_dir.is_dir():
+        raise HTTPException(404, f"snapshot not found: {snapshot_id}")
+    manifest_text = ""
+    manifest_path = snap_dir / "manifest.yaml"
+    if manifest_path.is_file():
+        try:
+            manifest_text = manifest_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            manifest_text = f"# read error: {exc}"
+    files: list[dict[str, Any]] = []
+    for f in sorted(snap_dir.rglob("*")):
+        if not f.is_file():
+            continue
+        try:
+            files.append(
+                {
+                    "rel": str(f.relative_to(snap_dir)),
+                    "size": f.stat().st_size,
+                }
+            )
+        except OSError:
+            continue
+    return templates.TemplateResponse(
+        request,
+        "snapshot.html",
+        {
+            "host": s.hmm_host,
+            "snapshot_id": snapshot_id,
+            "manifest": manifest_text,
+            "files": files,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
 def _parse_bladelist_form(token: str) -> list[UpgradeTarget]:
     """Decode a form-submitted bladelist back into typed UpgradeTargets.
 
