@@ -28,6 +28,7 @@ from .. import ops
 from ..config import Settings
 from ..hmm_web import (
     FirmwareModule,
+    HealthModule,
     HMMWebClient,
     HMMWebError,
     InventoryModule,
@@ -1069,6 +1070,58 @@ def firmware_web_cancel(
         actor=actor,
     )
     return JSONResponse({"ok": True})
+
+
+@app.get("/health", response_class=HTMLResponse)
+def health_page(request: Request) -> HTMLResponse:
+    s = _settings(request)
+    return templates.TemplateResponse(
+        request,
+        "health.html",
+        {
+            "host": s.hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
+@app.get("/api/health/alarms", response_class=HTMLResponse)
+def health_alarms(request: Request) -> HTMLResponse:
+    err: str | None = None
+    summary: Any = None
+    try:
+        with _hmm_web(request) as c:
+            summary = HealthModule(c).list_alarms()
+    except (HMMWebError, Exception) as exc:
+        err = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "_health_alarms.html",
+        {"summary": summary, "error": err},
+    )
+
+
+@app.get("/api/health/sel", response_class=HTMLResponse)
+def health_sel(request: Request, bladename: str = "smm", perpage: int = 50) -> HTMLResponse:
+    err: str | None = None
+    page: Any = None
+    # narrow the bladename to known shapes so we don't proxy arbitrary input
+    safe = (
+        bladename.strip()
+        if bladename.strip() in ("smm", "othersmm")
+        or bladename.strip().startswith(("Slot", "Swi"))
+        else "smm"
+    )
+    try:
+        with _hmm_web(request) as c:
+            page = HealthModule(c).list_sel(bladename=safe, perpage=perpage)
+    except (HMMWebError, Exception) as exc:
+        err = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "_health_sel.html",
+        {"page": page, "error": err, "bladename": safe},
+    )
 
 
 @app.get("/snapshots", response_class=HTMLResponse)

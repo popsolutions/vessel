@@ -1,0 +1,50 @@
+{% if error %}
+  <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded">
+    alarms error: {{ error }}
+  </div>
+{% elif summary is none %}
+  <div class="text-xs text-slate-500">No data.</div>
+{% else %}
+  <div class="text-xs mb-3 flex items-center gap-2 flex-wrap">
+    {% if summary.total == 0 %}
+      <span class="pill pill-ok">no active alarms</span>
+    {% else %}
+      <span class="pill pill-err">{{ summary.total }} total</span>
+    {% endif %}
+    {% if summary.critical %}<span class="pill pill-err">{{ summary.critical }} critical</span>{% endif %}
+    {% if summary.major %}<span class="pill pill-warn">{{ summary.major }} major</span>{% endif %}
+    {% if summary.minor %}<span class="pill pill-na">{{ summary.minor }} minor</span>{% endif %}
+  </div>
+  {% if summary.alarms %}
+  <table class="w-full text-xs border-collapse">
+    <thead>
+      <tr class="text-slate-400 border-b border-slate-800">
+        <th class="text-left py-1 pr-3">Severity</th>
+        <th class="text-left py-1 pr-3">Source</th>
+        <th class="text-left py-1 pr-3">Sensor</th>
+        <th class="text-left py-1 pr-3">Event</th>
+        <th class="text-left py-1 pr-3">When</th>
+        <th class="text-left py-1">Code</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in summary.alarms %}
+      <tr class="border-b border-slate-900/60 align-top {% if not a.is_active %}opacity-50{% endif %}">
+        <td class="py-1 pr-3">
+          {% if a.level == 3 %}<span class="pill pill-err">{{ a.leveldesp }}</span>
+          {% elif a.level == 2 %}<span class="pill pill-warn">{{ a.leveldesp }}</span>
+          {% elif a.level == 1 %}<span class="pill pill-na">{{ a.leveldesp }}</span>
+          {% else %}<span class="pill pill-ok">{{ a.leveldesp }}</span>{% endif %}
+          {% if not a.is_active %}<span class="pill pill-na">cleared</span>{% endif %}
+        </td>
+        <td class="py-1 pr-3 text-slate-200">{{ a.source }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ a.sensorname }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ a.eventdesp }}</td>
+        <td class="py-1 pr-3 text-slate-400 whitespace-nowrap">{{ a.datetime_str }}</td>
+        <td class="py-1 text-slate-500"><code class="text-[11px]">{{ a.eventcode }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endif %}

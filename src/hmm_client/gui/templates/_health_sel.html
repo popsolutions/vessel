@@ -1,0 +1,45 @@
+{% if error %}
+  <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded">
+    SEL error: {{ error }}
+  </div>
+{% elif page is none %}
+  <div class="text-xs text-slate-500">No data.</div>
+{% else %}
+  <div class="text-xs mb-2 text-slate-400">
+    <span class="text-slate-300">{{ bladename }}</span>
+    — {{ page.events|length }} of {{ page.total }} event(s)
+  </div>
+  {% if not page.events %}
+    <div class="text-xs text-slate-500">No SEL events for {{ bladename }}.</div>
+  {% else %}
+  <table class="w-full text-xs border-collapse">
+    <thead>
+      <tr class="text-slate-400 border-b border-slate-800">
+        <th class="text-left py-1 pr-3">Severity</th>
+        <th class="text-left py-1 pr-3">When</th>
+        <th class="text-left py-1 pr-3">Source</th>
+        <th class="text-left py-1 pr-3">Sensor</th>
+        <th class="text-left py-1 pr-3">Event</th>
+        <th class="text-left py-1">Assert</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in page.events %}
+      <tr class="border-b border-slate-900/60 align-top">
+        <td class="py-1 pr-3">
+          {% if e.level == 3 %}<span class="pill pill-err">{{ e.leveldesp }}</span>
+          {% elif e.level == 2 %}<span class="pill pill-warn">{{ e.leveldesp }}</span>
+          {% elif e.level == 1 %}<span class="pill pill-na">{{ e.leveldesp }}</span>
+          {% else %}<span class="pill pill-ok">{{ e.leveldesp }}</span>{% endif %}
+        </td>
+        <td class="py-1 pr-3 text-slate-400 whitespace-nowrap">{{ e.datetime_str }}</td>
+        <td class="py-1 pr-3 text-slate-200">{{ e.source }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ e.sensorname }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ e.eventdesp }}</td>
+        <td class="py-1 text-slate-400">{% if e.asserted %}asserted{% else %}deasserted{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endif %}

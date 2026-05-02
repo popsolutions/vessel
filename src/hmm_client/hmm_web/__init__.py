@@ -12,6 +12,7 @@ for the protocol details.
 
 from .client import HMMWebClient, HMMWebError, HMMWebResult
 from .firmware import FirmwareModule, UpgradeStatus, UpgradeTarget
+from .health import Alarm, AlarmsSummary, HealthModule, SelEvent, SelPage
 from .inventory import ComponentVersion, InventoryModule
 from .manifest import FieldDiff, ManifestDiff, ManifestError, diff, parse_manifest
 
@@ -29,4 +30,9 @@ __all__ = (
     "ManifestError",
     "diff",
     "parse_manifest",
+    "HealthModule",
+    "Alarm",
+    "AlarmsSummary",
+    "SelEvent",
+    "SelPage",
 )

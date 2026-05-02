@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>hmm — Health ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .card { background: #111827; border: 1px solid #1f2937; }
+    .pill { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11px; }
+    .pill-ok { background: rgba(19,190,183,.15); color: #5eead4; border: 1px solid rgba(19,190,183,.4); }
+    .pill-na { background: rgba(171,182,191,.15); color: #cbd5e1; border: 1px solid rgba(171,182,191,.4); }
+    .pill-err{ background: rgba(231,59,22,.15); color: #fca5a5; border: 1px solid rgba(231,59,22,.4); }
+    .pill-warn{background: rgba(240,171,0,.15); color: #fde68a; border: 1px solid rgba(240,171,0,.5); }
+  </style>
+</head>
+<body class="text-sm">
+
+<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-4">
+    <a href="/" class="text-emerald-400 font-bold hover:underline">hmm</a>
+    <span class="text-slate-400">Health @</span>
+    <span class="text-slate-200">{{ host }}</span>
+  </div>
+  <div class="flex items-center gap-4 text-xs">
+    <a href="/snapshots" class="text-slate-300 hover:text-emerald-400">snapshots →</a>
+    <a href="/firmware-web" class="text-slate-300 hover:text-emerald-400">firmware →</a>
+    <span class="text-slate-500">{{ now }}</span>
+  </div>
+</header>
+
+<main class="px-6 py-4 space-y-6 max-w-6xl">
+
+  <section class="card rounded p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-slate-300 font-bold">Active alarms</h2>
+      <button class="text-xs text-slate-400 hover:text-emerald-400"
+              hx-get="/api/health/alarms" hx-target="#h-alarms" hx-swap="innerHTML">
+        ↻ refresh
+      </button>
+    </div>
+    <div id="h-alarms" hx-get="/api/health/alarms" hx-trigger="load" hx-swap="innerHTML">
+      <div class="text-xs text-slate-500">Loading…</div>
+    </div>
+  </section>
+
+  <section class="card rounded p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-slate-300 font-bold">System Event Log (SEL)</h2>
+      <div class="flex items-center gap-2 text-xs">
+        <select id="sel-blade" class="bg-slate-800 px-2 py-1 rounded text-xs"
+                onchange="reloadSel()">
+          <option value="smm">smm (active)</option>
+          <option value="othersmm">othersmm (standby)</option>
+          <option value="Swi2">Swi2</option>
+          <option value="Swi3">Swi3</option>
+          {% for n in [1,2,3,4,8,9,10,11,12,13,14,15,16] %}
+            <option value="Slot{{n}}">Slot{{n}}</option>
+          {% endfor %}
+        </select>
+        <button class="text-slate-400 hover:text-emerald-400" onclick="reloadSel()">↻</button>
+      </div>
+    </div>
+    <div id="h-sel"
+         hx-get="/api/health/sel?bladename=smm" hx-trigger="load" hx-swap="innerHTML">
+      <div class="text-xs text-slate-500">Loading…</div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+function reloadSel() {
+  const blade = document.getElementById('sel-blade').value;
+  htmx.ajax('GET', `/api/health/sel?bladename=${encodeURIComponent(blade)}`, '#h-sel');
+}
+</script>
+
+</body>
+</html>
