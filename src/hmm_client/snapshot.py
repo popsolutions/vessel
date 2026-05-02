@@ -280,6 +280,17 @@ def _hmm_software_version(s: Settings) -> str:
 
 
 def run_snapshot() -> Path:
+    """Capture chassis state under `snapshots/<UTC-stamp>/`.
+
+    The snapshot is the foundation for the project's "snapshot first,
+    change second" rule — every later mutating op should reference
+    this snapshot's id by `snapshot_id` in the audit log. This call
+    itself is also audited (target=hmm, op=snapshot.create) so the
+    audit stream is the source of truth for "did we capture state
+    before that change?".
+    """
+    from . import audit
+
     s = Settings.load()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = s.snapshots_dir / stamp
@@ -287,23 +298,49 @@ def run_snapshot() -> Path:
 
     console.rule(f"[bold]HMM snapshot[/] {s.hmm_host} -> {out}")
 
-    items: list[Item] = []
-    blades, switches = _redfish_chassis_slots(s)
-    console.print(f"  inventory  {len(blades)} active blades, {len(switches)} active switches")
+    try:
+        items: list[Item] = []
+        blades, switches = _redfish_chassis_slots(s)
+        console.print(f"  inventory  {len(blades)} active blades, {len(switches)} active switches")
 
-    _snap_redfish(s, out, items)
-    _snap_hmm_cli(s, out, items, blades, switches)
-    _snap_switches(s, out, items, switches)
+        _snap_redfish(s, out, items)
+        _snap_hmm_cli(s, out, items, blades, switches)
+        _snap_switches(s, out, items, switches)
 
-    manifest = {
-        "timestamp": stamp,
-        "host": s.hmm_host,
-        "hmm_software_version": _hmm_software_version(s),
-        "blades_present": blades,
-        "switches_present": switches,
-        "items": [it.to_dict() for it in items],
-    }
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        manifest = {
+            "timestamp": stamp,
+            "host": s.hmm_host,
+            "hmm_software_version": _hmm_software_version(s),
+            "blades_present": blades,
+            "switches_present": switches,
+            "items": [it.to_dict() for it in items],
+        }
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    except Exception as exc:
+        audit.log_op(
+            op="snapshot.create",
+            target_kind="hmm",
+            target_id=s.hmm_host,
+            snapshot_id=stamp,
+            result="failed",
+            evidence={"out_dir": str(out), "error": str(exc)},
+        )
+        raise
+
+    audit.log_op(
+        op="snapshot.create",
+        target_kind="hmm",
+        target_id=s.hmm_host,
+        snapshot_id=stamp,
+        result="success",
+        evidence={
+            "out_dir": str(out),
+            "items_count": len(items),
+            "bytes_total": sum(it.bytes for it in items),
+            "blades_present": blades,
+            "switches_present": switches,
+        },
+    )
 
     console.print(f"\n[bold green]Snapshot complete[/] -> {out / 'manifest.json'}")
     console.print(f"  {len(items)} files, {sum(it.bytes for it in items):,} bytes total")

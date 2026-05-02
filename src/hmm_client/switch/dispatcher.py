@@ -96,15 +96,42 @@ class Dispatcher:
         commands, write confirmations) will need an `invoke_shell`
         channel + `screen-length 0 temporary` setup — TBD with live
         hardware.
+
+        Every command — even read-only `display` — gets one audit
+        record. The chassis switch is sensitive enough that "what was
+        queried, by whom, when" is itself a security signal.
         """
+        from .. import audit
+
         if self._client is None:
             raise DispatcherError("dispatcher not connected")
-        stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
-        stdin.close()
-        out = stdout.read().decode("utf-8", errors="replace")
-        err = stderr.read().decode("utf-8", errors="replace")
+        try:
+            stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+            stdin.close()
+            out = stdout.read().decode("utf-8", errors="replace")
+            err = stderr.read().decode("utf-8", errors="replace")
+        except Exception as exc:
+            audit.log_op(
+                op="switch.cli",
+                target_kind="switch",
+                target_id=self.target.host,
+                result="failed",
+                evidence={"command": command, "error": str(exc)},
+            )
+            raise
         if err.strip():
             log.warning("VRP stderr: %s", err.strip())
+        audit.log_op(
+            op="switch.cli",
+            target_kind="switch",
+            target_id=self.target.host,
+            result="success",
+            evidence={
+                "command": command,
+                "output_tail": out[-512:],
+                "stderr_tail": err[-256:] if err.strip() else None,
+            },
+        )
         return out
 
 
