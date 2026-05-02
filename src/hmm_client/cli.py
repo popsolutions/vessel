@@ -394,4 +394,7 @@ def notify_cmd(
 
 
 if __name__ == "__main__":
+    from .logging_config import setup as _setup_logging
+
+    _setup_logging()
     app()
