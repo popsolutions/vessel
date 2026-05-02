@@ -17,6 +17,33 @@
     .progress-fill { background: #13beb7; height: 100%; transition: width 600ms ease; }
     .progress-fill.failed { background: #e73b16; }
     pre.fw { white-space: pre-wrap; font-size: 11px; color: #94a3b8; }
+    /* Chassis-shaped target picker */
+    .component {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 6px 8px;
+      cursor: pointer;
+      transition: all 150ms;
+      user-select: none;
+      min-width: 90px;
+    }
+    .component:hover { border-color: #64748b; background: #1e293b; }
+    .component.selected {
+      border-color: #13beb7;
+      background: rgba(19,190,183,0.18);
+      box-shadow: 0 0 0 1px #13beb7 inset;
+    }
+    .component.selected .comp-label { color: #5eead4; }
+    .component.component-absent {
+      background: transparent;
+      border: 1px dashed #334155;
+      color: #475569;
+      cursor: not-allowed;
+    }
+    .component.component-absent:hover { border-color: #334155; background: transparent; }
+    .comp-label { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+    .comp-sub { font-size: 10px; color: #64748b; margin-top: 1px; }
   </style>
 </head>
 <body class="text-sm">
@@ -102,35 +129,91 @@
   </section>
 
   <section class="card rounded p-4">
-    <h2 class="text-slate-300 font-bold mb-3">2. Apply to targets</h2>
-    <p class="text-xs text-slate-400 mb-3">
-      Use the <em>bladelist</em> shape the HMM expects:
-      <code class="text-amber-300">bothsmm</code> for both SMMs at once,
-      or semicolon-terminated tokens like
-      <code class="text-amber-300">Swi2:fru0;Swi3:fru0;</code>
-      or <code class="text-amber-300">Slot1:fru0;</code>.
-    </p>
-    <form id="fw-apply-form" onsubmit="applyUpgrade(event)" class="flex gap-2">
-      <input type="text" name="bladelist" id="fw-bladelist"
-             placeholder="bothsmm  OR  Swi2:fru0;Swi3:fru0;"
-             class="flex-1 bg-slate-800 px-3 py-1 rounded text-xs">
-      <button type="submit"
-              class="bg-rose-700 hover:bg-rose-600 px-3 py-1 rounded text-xs"
-              title="Triggers a real flash on the chassis">
-        apply
-      </button>
-    </form>
-    <label class="mt-2 flex items-center gap-2 text-xs text-slate-300">
-      <input type="checkbox" id="snapshot-first" name="snapshot_first" checked>
-      <span>snapshot chassis state before flash <span class="text-slate-500">(strongly recommended)</span></span>
-    </label>
-    <div class="flex gap-2 mt-2 text-xs">
-      <span class="text-slate-500">quick fill:</span>
-      <button type="button" class="text-emerald-400 hover:underline"
-              onclick="document.getElementById('fw-bladelist').value='bothsmm'">bothsmm</button>
-      <button type="button" class="text-emerald-400 hover:underline"
-              onclick="document.getElementById('fw-bladelist').value='Swi2:fru0;Swi3:fru0;'">Swi2+Swi3</button>
+    <h2 class="text-slate-300 font-bold mb-3">2. Select targets &amp; apply</h2>
+
+    <!-- Chassis layout selector -->
+    <div class="chassis-picker mb-3">
+
+      <!-- SMMs row -->
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[11px] text-slate-500 w-16 text-right">Mgmt:</span>
+        <div class="component" data-target="bothsmm" data-kind="smm" onclick="toggleComponent(this)">
+          <div class="comp-label">SMM Pair</div>
+          <div class="comp-sub">smm + othersmm</div>
+        </div>
+      </div>
+
+      <!-- Blade grid: 4 columns x 4 rows -->
+      <div class="flex items-start gap-2 mb-2">
+        <span class="text-[11px] text-slate-500 w-16 text-right pt-1">Blades:</span>
+        <div class="grid grid-cols-4 gap-1 flex-1">
+          {% for n in range(1, 17) %}
+            {% set populated = n in [1,2,3,4,8,9,10,11,12,16] %}
+            {% set storage = n in [13,14,15] %}
+            <div class="component {% if not populated and not storage %}component-absent{% endif %}"
+                 data-target="Slot{{n}}:fru0;"
+                 data-kind="{% if storage %}ch222{% else %}ch121{% endif %}"
+                 {% if populated or storage %}onclick="toggleComponent(this)"{% endif %}>
+              <div class="comp-label">Slot {{n}}</div>
+              <div class="comp-sub">{% if storage %}CH222{% elif populated %}CH121{% else %}empty{% endif %}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Switch row -->
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] text-slate-500 w-16 text-right">Switch:</span>
+        <div class="grid grid-cols-4 gap-1 flex-1">
+          {% for s in ["Swi1", "Swi2", "Swi3", "Swi4"] %}
+            {% set present = s in ["Swi2", "Swi3"] %}
+            <div class="component {% if not present %}component-absent{% endif %}"
+                 data-target="{{ s }}:fru0;" data-kind="switch"
+                 {% if present %}onclick="toggleComponent(this)"{% endif %}>
+              <div class="comp-label">{{ s }}</div>
+              <div class="comp-sub">{% if present %}CX310{% else %}empty{% endif %}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
     </div>
+
+    <!-- Quick selects -->
+    <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+      <span class="text-slate-500">quick:</span>
+      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
+              onclick="selectKind('smm')">SMMs</button>
+      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
+              onclick="selectKind('switch')">Both switches</button>
+      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
+              onclick="selectKind('ch121')">CH121 blades (10)</button>
+      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
+              onclick="selectKind('ch222')">CH222 blades (3)</button>
+      <button type="button" class="ml-auto px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400"
+              onclick="clearSelection()">clear</button>
+    </div>
+
+    <!-- Computed bladelist preview -->
+    <div class="text-xs mb-3 flex items-center gap-2">
+      <span class="text-slate-500">bladelist:</span>
+      <code id="bladelist-display" class="bg-slate-800 px-2 py-1 rounded flex-1 text-amber-300 truncate">(none selected)</code>
+    </div>
+
+    <form id="fw-apply-form" onsubmit="applyUpgrade(event)">
+      <input type="hidden" name="bladelist" id="fw-bladelist" value="">
+      <div class="flex items-center gap-3">
+        <button type="submit" id="fw-apply-btn" disabled
+                class="bg-rose-700 hover:bg-rose-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed px-4 py-1.5 rounded text-xs font-bold"
+                title="Triggers a real flash on the chassis">
+          apply firmware
+        </button>
+        <label class="flex items-center gap-2 text-xs text-slate-300">
+          <input type="checkbox" id="snapshot-first" name="snapshot_first" checked>
+          <span>snapshot chassis state first <span class="text-slate-500">(recommended)</span></span>
+        </label>
+      </div>
+    </form>
     <div id="apply-msg" class="mt-2 text-xs"></div>
   </section>
 
@@ -235,6 +318,51 @@ async function refreshPreflight() {
     out.textContent = 'preflight error: ' + e.message;
     out.className = 'text-xs text-rose-400';
   }
+}
+
+function toggleComponent(el) {
+  if (el.classList.contains('component-absent')) return;
+  el.classList.toggle('selected');
+  recomputeBladelist();
+}
+
+function selectKind(kind) {
+  document.querySelectorAll('.component').forEach(el => {
+    if (el.classList.contains('component-absent')) return;
+    if (el.dataset.kind === kind) el.classList.add('selected');
+  });
+  recomputeBladelist();
+}
+
+function clearSelection() {
+  document.querySelectorAll('.component.selected').forEach(el => el.classList.remove('selected'));
+  recomputeBladelist();
+}
+
+function recomputeBladelist() {
+  const selected = [...document.querySelectorAll('.component.selected')];
+  // The 'bothsmm' alias collapses both SMMs into a single token; if it's
+  // selected alongside individual things the HMM might still accept the
+  // 'bothsmm;Slot1:fru0;' shape, but we play safe and require it to be solo.
+  const tokens = selected.map(el => el.dataset.target);
+  let list = '';
+  if (tokens.length === 1 && tokens[0] === 'bothsmm') {
+    list = 'bothsmm';
+  } else if (tokens.length === 1 && tokens[0].endsWith(';')) {
+    list = tokens[0];
+  } else if (tokens.length > 1 && tokens.includes('bothsmm')) {
+    // mix of SMM-pair + others — still valid shape per captures
+    list = tokens.join('');
+    if (!list.endsWith(';')) list += ';';
+  } else {
+    list = tokens.join('');
+  }
+  const display = document.getElementById('bladelist-display');
+  const hidden = document.getElementById('fw-bladelist');
+  const btn = document.getElementById('fw-apply-btn');
+  display.textContent = list || '(none selected)';
+  hidden.value = list;
+  btn.disabled = !list;
 }
 
 async function applyUpgrade(ev) {
