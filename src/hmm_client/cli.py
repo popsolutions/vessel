@@ -365,6 +365,169 @@ def gui_password_hash_cmd(
     console.print(f"VESSEL_GUI_PASSWORD_HASH={h}")
 
 
+# --- switch sub-app: VLAN CRUD on CX310 ---
+switch_app = typer.Typer(no_args_is_help=True, help="CX310 switch ops (VLAN, port)")
+
+
+def _switch_dispatcher(host: str, user: str, password: str | None):
+    """Build a connected Dispatcher; caller responsible for .close()."""
+    from .switch.dispatcher import Dispatcher, SshTarget
+
+    target = SshTarget(host=host, username=user, password=password or None)
+    d = Dispatcher(target)
+    d.connect()
+    return d
+
+
+@switch_app.command("list-vlans")
+def switch_list_vlans(
+    host: str = typer.Argument(..., help="Switch hostname or IP"),
+    user: str = typer.Option("admin", "--user", "-u"),
+    password: str = typer.Option(
+        "", "--password", "-p", help="Empty → use ssh-agent / ~/.ssh keys"
+    ),
+) -> None:
+    """List VLANs on a switch."""
+    from .switch import ops as switch_ops
+
+    d = _switch_dispatcher(host, user, password)
+    try:
+        vlans = switch_ops.list_vlans(d)
+    finally:
+        d.close()
+    t = Table(title=f"VLANs on {host}")
+    t.add_column("VID", justify="right")
+    t.add_column("Type")
+    t.add_column("Untagged ports")
+    t.add_column("Tagged ports")
+    for vid in sorted(vlans):
+        e = vlans[vid]
+        t.add_row(str(vid), e.vlan_type, ", ".join(e.untagged_ports), ", ".join(e.tagged_ports))
+    console.print(t)
+
+
+@switch_app.command("add-vlan")
+def switch_add_vlan(
+    host: str = typer.Argument(...),
+    vid: int = typer.Argument(..., help="VLAN ID 1..4094"),
+    name: str = typer.Option("", "--name", "-n", help="Optional VLAN description"),
+    user: str = typer.Option("admin", "--user", "-u"),
+    password: str = typer.Option("", "--password", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Create a VLAN. Idempotent. Auto-rollback on watchdog failure."""
+    from .switch import ops as switch_ops
+
+    if not yes and not typer.confirm(f"add VLAN {vid} on {host}?", default=False):
+        raise typer.Exit(1)
+    d = _switch_dispatcher(host, user, password)
+    try:
+        result = switch_ops.add_vlan(d, vid, name=name or None)
+    finally:
+        d.close()
+    if result.success:
+        console.print(
+            f"[green]✓ VLAN {vid} {'present' if result.evidence.get('already_existed') else 'added'}[/]"
+        )
+    else:
+        console.print(f"[red]✗ rollback: {result.evidence.get('reason')}[/]")
+        raise typer.Exit(2)
+
+
+@switch_app.command("remove-vlan")
+def switch_remove_vlan(
+    host: str = typer.Argument(...),
+    vid: int = typer.Argument(...),
+    user: str = typer.Option("admin", "--user", "-u"),
+    password: str = typer.Option("", "--password", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a VLAN. Idempotent. Auto-rollback on watchdog failure."""
+    from .switch import ops as switch_ops
+
+    if not yes and not typer.confirm(f"remove VLAN {vid} on {host}?", default=False):
+        raise typer.Exit(1)
+    d = _switch_dispatcher(host, user, password)
+    try:
+        result = switch_ops.remove_vlan(d, vid)
+    finally:
+        d.close()
+    if result.success:
+        console.print(
+            f"[green]✓ VLAN {vid} {'absent' if result.evidence.get('already_absent') else 'removed'}[/]"
+        )
+    else:
+        console.print(f"[red]✗ rollback: {result.evidence.get('reason')}[/]")
+        raise typer.Exit(2)
+
+
+@switch_app.command("set-access-port")
+def switch_set_access_port(
+    host: str = typer.Argument(...),
+    port: str = typer.Argument(..., help="e.g. GE0/0/5 or XGE0/0/3"),
+    vid: int = typer.Argument(..., help="VLAN ID for untagged egress"),
+    user: str = typer.Option("admin", "--user", "-u"),
+    password: str = typer.Option("", "--password", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Configure a port as untagged member of one VLAN."""
+    from .switch import ops as switch_ops
+
+    if not yes and not typer.confirm(f"set {port} on {host} as access vlan {vid}?", default=False):
+        raise typer.Exit(1)
+    d = _switch_dispatcher(host, user, password)
+    try:
+        result = switch_ops.set_access_port(d, port, vid)
+    finally:
+        d.close()
+    console.print(
+        f"[{'green' if result.success else 'red'}]"
+        + ("✓" if result.success else "✗")
+        + f" {port} access vlan {vid}[/]"
+    )
+    if not result.success:
+        raise typer.Exit(2)
+
+
+@switch_app.command("set-trunk-port")
+def switch_set_trunk_port(
+    host: str = typer.Argument(...),
+    port: str = typer.Argument(...),
+    allowed: str = typer.Argument(..., help="Comma-separated VLAN IDs, e.g. 10,20,30"),
+    pvid: int = typer.Option(0, "--pvid", help="Native (untagged) VLAN; 0 = none"),
+    user: str = typer.Option("admin", "--user", "-u"),
+    password: str = typer.Option("", "--password", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Configure a port as a trunk carrying multiple VLANs (tagged)."""
+    from .switch import ops as switch_ops
+
+    try:
+        allowed_vids = [int(x.strip()) for x in allowed.split(",") if x.strip()]
+    except ValueError as exc:
+        console.print(f"[red]invalid --allowed list: {exc}[/]")
+        raise typer.Exit(1) from exc
+    if not yes and not typer.confirm(
+        f"set {port} on {host} as trunk allow={allowed_vids} pvid={pvid or 'none'}?", default=False
+    ):
+        raise typer.Exit(1)
+    d = _switch_dispatcher(host, user, password)
+    try:
+        result = switch_ops.set_trunk_port(d, port, allowed_vids=allowed_vids, pvid=pvid or None)
+    finally:
+        d.close()
+    console.print(
+        f"[{'green' if result.success else 'red'}]"
+        + ("✓" if result.success else "✗")
+        + f" {port} trunk allow={allowed_vids}[/]"
+    )
+    if not result.success:
+        raise typer.Exit(2)
+
+
+app.add_typer(switch_app, name="switch")
+
+
 @app.command("notify")
 def notify_cmd(
     message: str = typer.Argument(..., help="Text to send"),
