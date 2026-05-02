@@ -167,6 +167,7 @@
 
 <script>
 let pollTimer = null;
+let lastAllDone = true;  // tracks edge from in-progress -> done so we re-verify once
 
 function setMsg(elId, text, ok) {
   const el = document.getElementById(elId);
@@ -236,6 +237,7 @@ async function applyUpgrade(ev) {
     const snapMsg = j.snapshot_id ? ` (snapshot=${j.snapshot_id})` : '';
     setMsg('apply-msg', `apply triggered: ${j.bladelist}${snapMsg}`, true);
     document.getElementById('fw-poll').checked = true;
+    lastAllDone = false;  // reset edge detector so post-flash verify fires
     togglePoll();
     refreshAudit();
     refreshPreflight();
@@ -254,7 +256,15 @@ async function refreshStatus() {
     if (!j.targets || j.targets.length === 0) {
       target.innerHTML = '<div class="text-xs text-slate-500">No upgrade in progress.</div>';
       if (pollTimer) { document.getElementById('fw-poll').checked = false; togglePoll(); }
+      lastAllDone = true;
       return;
+    }
+    // Edge detection: if we transition from in-progress to all_done, re-verify.
+    if (!lastAllDone && j.all_done) {
+      lastAllDone = true;
+      postFlashVerify(j.any_failed);
+    } else if (!j.all_done) {
+      lastAllDone = false;
     }
     target.innerHTML = j.targets.map(t => {
       const failed = t.retcode !== 0;
@@ -301,6 +311,24 @@ async function cancelUpgrade() {
 
 function refreshAudit() {
   htmx.ajax('GET', '/api/firmware-web/audit-tail', '#fw-audit');
+}
+
+function postFlashVerify(anyFailed) {
+  // Banner above status to make it visible the inventory is being refreshed.
+  const target = document.getElementById('fw-status');
+  const banner = document.createElement('div');
+  banner.className = anyFailed
+    ? 'border border-rose-700 bg-rose-900/30 text-rose-200 text-xs p-2 rounded mb-2'
+    : 'border border-emerald-700 bg-emerald-900/30 text-emerald-200 text-xs p-2 rounded mb-2';
+  banner.textContent = anyFailed
+    ? 'Flash terminated with failures — refreshing inventory + preflight + audit to capture state...'
+    : 'Flash complete — refreshing inventory + preflight + audit to confirm new versions...';
+  target.parentNode.insertBefore(banner, target);
+  setTimeout(() => banner.remove(), 12000);
+  // Kick off all three reads in parallel; HTMX handles each independently.
+  htmx.ajax('GET', '/api/firmware-web/inventory', '#fw-inventory');
+  refreshAudit();
+  refreshPreflight();
 }
 
 async function diffManifest(ev) {
