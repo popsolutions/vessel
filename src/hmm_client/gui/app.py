@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
@@ -26,6 +26,14 @@ from fastapi.templating import Jinja2Templates
 from .. import auth as _auth
 from .. import ops
 from ..config import Settings
+from ..hmm_web import (
+    FirmwareModule,
+    HMMWebClient,
+    HMMWebError,
+    InventoryModule,
+    UpgradeTarget,
+)
+from ..hmm_web.firmware import bladelist as _bladelist_encode
 from ..snapshot import run_snapshot
 
 _log = logging.getLogger(__name__)
@@ -756,6 +764,298 @@ def task_cancel(task_id: str) -> JSONResponse:
 @app.get("/api/tasks", response_class=HTMLResponse)
 def fragment_tasks(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "_tasks.html", {"tasks": list(_tasks.values())})
+
+
+# ===== HMM proprietary web-API: firmware upgrade panel =====
+
+
+def _hmm_web(request: Request) -> HMMWebClient:
+    """Open and login an HMMWebClient for the active chassis."""
+    s = _settings(request)
+    c = HMMWebClient.from_settings(s)
+    c.login()
+    return c
+
+
+@app.get("/firmware-web", response_class=HTMLResponse)
+def firmware_web_page(request: Request) -> HTMLResponse:
+    s = _settings(request)
+    return templates.TemplateResponse(
+        request,
+        "firmware_web.html",
+        {
+            "host": s.hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
+@app.get("/api/firmware-web/inventory", response_class=HTMLResponse)
+def firmware_web_inventory(request: Request) -> HTMLResponse:
+    """HTMX fragment: table of every component's firmware versions."""
+    err: str | None = None
+    versions: list[Any] = []
+    try:
+        with _hmm_web(request) as c:
+            versions = InventoryModule(c).list_versions()
+    except (HMMWebError, Exception) as exc:
+        err = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "_firmware_inventory.html",
+        {"versions": versions, "error": err},
+    )
+
+
+@app.post("/api/firmware-web/upload")
+async def firmware_web_upload(
+    request: Request,
+    actor: str = Depends(_gui_auth),
+    file: UploadFile = None,  # type: ignore[assignment]
+) -> JSONResponse:
+    """Upload a firmware image (.hpm) into the HMM upload buffer."""
+    if file is None or not file.filename:
+        raise HTTPException(400, "no file provided")
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(400, "empty file")
+    s = _settings(request)
+    from .. import audit as _audit
+
+    try:
+        with _hmm_web(request) as c:
+            FirmwareModule(c).upload(file.filename, image_bytes)
+    except HMMWebError as exc:
+        _audit.log_op(
+            op="firmware-web.upload",
+            target_kind="hmm",
+            target_id=s.hmm_host,
+            result="failed",
+            actor=actor,
+            evidence={"filename": file.filename, "bytes": len(image_bytes), "error": str(exc)},
+        )
+        raise HTTPException(502, f"hmm upload failed: {exc}")
+    _audit.log_op(
+        op="firmware-web.upload",
+        target_kind="hmm",
+        target_id=s.hmm_host,
+        result="success",
+        actor=actor,
+        evidence={"filename": file.filename, "bytes": len(image_bytes)},
+    )
+    return JSONResponse({"ok": True, "filename": file.filename, "bytes": len(image_bytes)})
+
+
+@app.post("/api/firmware-web/apply")
+def firmware_web_apply(
+    request: Request,
+    actor: str = Depends(_gui_auth),
+    bladelist: str = Form("", description="Pre-encoded HMM bladelist token"),
+    snapshot_first: bool = Form(True),
+) -> JSONResponse:
+    """Trigger the upgrade against the previously-uploaded image.
+
+    When ``snapshot_first=True`` (default), runs ``run_snapshot()``
+    before invoking the flash so we have a recorded chassis state to
+    diff against if the upgrade goes sideways. The snapshot id is
+    threaded into the audit record so ``snapshot_id`` correlates with
+    later ``firmware-web.apply`` events.
+    """
+    s = _settings(request)
+    from .. import audit as _audit
+
+    targets = _parse_bladelist_form(bladelist)
+    if not targets:
+        raise HTTPException(400, "no valid targets in bladelist")
+
+    snapshot_id: str | None = None
+    if snapshot_first:
+        try:
+            snap_path = run_snapshot()
+            snapshot_id = snap_path.name
+        except Exception as exc:
+            _audit.log_op(
+                op="firmware-web.apply",
+                target_kind="hmm",
+                target_id=s.hmm_host,
+                result="failed",
+                actor=actor,
+                evidence={"bladelist": bladelist, "phase": "snapshot", "error": str(exc)},
+            )
+            raise HTTPException(500, f"pre-flash snapshot failed: {exc}")
+
+    try:
+        with _hmm_web(request) as c:
+            FirmwareModule(c).apply(targets)
+    except HMMWebError as exc:
+        _audit.log_op(
+            op="firmware-web.apply",
+            target_kind="hmm",
+            target_id=s.hmm_host,
+            result="failed",
+            actor=actor,
+            snapshot_id=snapshot_id,
+            evidence={"bladelist": bladelist, "phase": "apply", "error": str(exc)},
+        )
+        raise HTTPException(502, f"hmm apply failed: {exc}")
+
+    _audit.log_op(
+        op="firmware-web.apply",
+        target_kind="hmm",
+        target_id=s.hmm_host,
+        result="in-progress",
+        actor=actor,
+        snapshot_id=snapshot_id,
+        evidence={"bladelist": _bladelist_encode(targets)},
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "bladelist": _bladelist_encode(targets),
+            "snapshot_id": snapshot_id,
+        }
+    )
+
+
+@app.get("/api/firmware-web/status")
+def firmware_web_status(request: Request) -> JSONResponse:
+    """Poll progress of the running upgrade. Read-only — no audit entry."""
+    try:
+        with _hmm_web(request) as c:
+            st = FirmwareModule(c).status()
+    except HMMWebError as exc:
+        raise HTTPException(502, f"hmm status failed: {exc}")
+    return JSONResponse(
+        {
+            "all_done": st.all_done,
+            "any_failed": st.any_failed,
+            "targets": [
+                {
+                    "name": t.name,
+                    "retcode": t.retcode,
+                    "desp": t.desp,
+                    "progress": t.progress,
+                    "progress_desp": t.progress_desp,
+                    "is_terminal": t.is_terminal,
+                }
+                for t in st.targets
+            ],
+        }
+    )
+
+
+@app.get("/api/firmware-web/preflight")
+def firmware_web_preflight(request: Request) -> JSONResponse:
+    """Pre-flight check before apply: chassis-wide upgrade state + SMM checkupgrade.
+
+    Returns:
+        ``is_upgrading``: True if any flash is mid-flight (queryhandler.isupdate).
+        ``smm_checks``: ``{"1": ok_bool, "2": ok_bool}`` from ``checkupgrade``.
+
+    Useful as a "should I click apply?" guard — surface in the UI to
+    block the operator from kicking off a new flash while one is in
+    flight.
+    """
+    try:
+        with _hmm_web(request) as c:
+            inv = InventoryModule(c)
+            is_up = inv.is_upgrading()
+            fw = FirmwareModule(c)
+            checks: dict[str, bool] = {}
+            for smmtype in ("1", "2"):
+                r = c.post(
+                    "smmupgradehandler.php",
+                    actiontype="checkupgrade",
+                    smmtype=smmtype,
+                    referer_path="/system_manage_smm.html?chassisid=0",
+                )
+                checks[smmtype] = (r.retcode == 0)
+    except HMMWebError as exc:
+        raise HTTPException(502, f"hmm preflight failed: {exc}")
+    return JSONResponse({"is_upgrading": is_up, "smm_checks": checks})
+
+
+@app.get("/api/firmware-web/audit-tail", response_class=HTMLResponse)
+def firmware_web_audit_tail(request: Request, n: int = 30) -> HTMLResponse:
+    """HTMX fragment: tail of recent firmware-web audit records."""
+    from .. import audit as _audit
+
+    try:
+        records = _audit.read_records()
+    except Exception as exc:
+        return HTMLResponse(
+            f'<div class="text-xs text-rose-400">audit tail error: {exc}</div>'
+        )
+    fw_records = [
+        r for r in records if isinstance(r.get("op"), str) and r["op"].startswith("firmware-web.")
+    ][-max(n, 1):][::-1]  # newest first
+    return templates.TemplateResponse(
+        request,
+        "_firmware_audit.html",
+        {"records": fw_records},
+    )
+
+
+@app.post("/api/firmware-web/cancel")
+def firmware_web_cancel(
+    request: Request,
+    actor: str = Depends(_gui_auth),
+) -> JSONResponse:
+    """Cancel/cleanup the upload buffer or in-flight upgrade."""
+    s = _settings(request)
+    from .. import audit as _audit
+
+    try:
+        with _hmm_web(request) as c:
+            FirmwareModule(c).cancel()
+    except HMMWebError as exc:
+        _audit.log_op(
+            op="firmware-web.cancel",
+            target_kind="hmm",
+            target_id=s.hmm_host,
+            result="failed",
+            actor=actor,
+            evidence={"error": str(exc)},
+        )
+        raise HTTPException(502, f"hmm cancel failed: {exc}")
+    _audit.log_op(
+        op="firmware-web.cancel",
+        target_kind="hmm",
+        target_id=s.hmm_host,
+        result="success",
+        actor=actor,
+    )
+    return JSONResponse({"ok": True})
+
+
+def _parse_bladelist_form(token: str) -> list[UpgradeTarget]:
+    """Decode a form-submitted bladelist back into typed UpgradeTargets.
+
+    Accepts the same shapes the HMM expects:
+        ``bothsmm``                  -> [smm_pair]
+        ``Swi2:fru0;Swi3:fru0;``     -> [switch Swi2, switch Swi3]
+        ``Slot1:fru0;``              -> [blade Slot1]
+    """
+    token = token.strip()
+    if not token:
+        return []
+    if token == "bothsmm":
+        return [UpgradeTarget.smm_pair()]
+    out: list[UpgradeTarget] = []
+    for piece in token.split(";"):
+        piece = piece.strip()
+        if not piece:
+            continue
+        if ":" in piece:
+            name, fru = piece.split(":", 1)
+            fru = fru.removeprefix("fru").strip() or "0"
+            out.append(UpgradeTarget(bladename=name.strip(), fruid=fru))
+        else:
+            out.append(UpgradeTarget(bladename=piece))
+    return out
+
+
+# ===== end firmware-web =====
 
 
 def run(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:

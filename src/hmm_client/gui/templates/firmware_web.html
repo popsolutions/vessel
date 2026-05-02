@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>hmm — Firmware (web API) ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .card { background: #111827; border: 1px solid #1f2937; }
+    .pill { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11px; }
+    .pill-ok { background: rgba(19,190,183,.15); color: #5eead4; border: 1px solid rgba(19,190,183,.4); }
+    .pill-na { background: rgba(171,182,191,.15); color: #cbd5e1; border: 1px solid rgba(171,182,191,.4); }
+    .pill-err{ background: rgba(231,59,22,.15); color: #fca5a5; border: 1px solid rgba(231,59,22,.4); }
+    .progress-bar { background: #1f2937; height: 8px; border-radius: 999px; overflow: hidden; }
+    .progress-fill { background: #13beb7; height: 100%; transition: width 600ms ease; }
+    .progress-fill.failed { background: #e73b16; }
+    pre.fw { white-space: pre-wrap; font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body class="text-sm">
+
+<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-4">
+    <a href="/" class="text-emerald-400 font-bold hover:underline">hmm</a>
+    <span class="text-slate-400">Firmware (web API) @</span>
+    <span class="text-slate-200">{{ host }}</span>
+  </div>
+  <div class="text-slate-500 text-xs">{{ now }}</div>
+</header>
+
+<main class="px-6 py-4 space-y-6 max-w-6xl">
+
+  <section class="card rounded p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-slate-300 font-bold">Firmware inventory</h2>
+      <button class="text-xs text-slate-400 hover:text-emerald-400"
+              hx-get="/api/firmware-web/inventory"
+              hx-target="#fw-inventory" hx-swap="innerHTML"
+              hx-indicator="#fw-spin">
+        ↻ refresh
+      </button>
+    </div>
+    <div id="fw-spin" class="htmx-indicator text-xs text-amber-400">loading...</div>
+    <div id="fw-inventory"
+         hx-get="/api/firmware-web/inventory"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="text-xs text-slate-500">Loading inventory…</div>
+    </div>
+  </section>
+
+  <section class="card rounded p-4">
+    <h2 class="text-slate-300 font-bold mb-3">1. Upload firmware image</h2>
+    <form id="fw-upload-form" enctype="multipart/form-data"
+          onsubmit="uploadImage(event)">
+      <input type="file" name="file" accept=".hpm,.bin"
+             class="text-xs file:mr-3 file:bg-slate-800 file:text-slate-200 file:border-0 file:px-3 file:py-1 file:rounded">
+      <button type="submit"
+              class="ml-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded text-xs">
+        upload
+      </button>
+    </form>
+    <div id="upload-msg" class="mt-2 text-xs"></div>
+  </section>
+
+  <section class="card rounded p-4" id="preflight-card">
+    <h2 class="text-slate-300 font-bold mb-3 flex items-center justify-between">
+      <span>Pre-flight</span>
+      <button class="text-xs text-slate-400 hover:text-emerald-400" onclick="refreshPreflight()">↻</button>
+    </h2>
+    <div id="preflight-out" class="text-xs text-slate-500">click ↻ to check chassis upgrade state.</div>
+  </section>
+
+  <section class="card rounded p-4">
+    <h2 class="text-slate-300 font-bold mb-3">2. Apply to targets</h2>
+    <p class="text-xs text-slate-400 mb-3">
+      Use the <em>bladelist</em> shape the HMM expects:
+      <code class="text-amber-300">bothsmm</code> for both SMMs at once,
+      or semicolon-terminated tokens like
+      <code class="text-amber-300">Swi2:fru0;Swi3:fru0;</code>
+      or <code class="text-amber-300">Slot1:fru0;</code>.
+    </p>
+    <form id="fw-apply-form" onsubmit="applyUpgrade(event)" class="flex gap-2">
+      <input type="text" name="bladelist" id="fw-bladelist"
+             placeholder="bothsmm  OR  Swi2:fru0;Swi3:fru0;"
+             class="flex-1 bg-slate-800 px-3 py-1 rounded text-xs">
+      <button type="submit"
+              class="bg-rose-700 hover:bg-rose-600 px-3 py-1 rounded text-xs"
+              title="Triggers a real flash on the chassis">
+        apply
+      </button>
+    </form>
+    <label class="mt-2 flex items-center gap-2 text-xs text-slate-300">
+      <input type="checkbox" id="snapshot-first" name="snapshot_first" checked>
+      <span>snapshot chassis state before flash <span class="text-slate-500">(strongly recommended)</span></span>
+    </label>
+    <div class="flex gap-2 mt-2 text-xs">
+      <span class="text-slate-500">quick fill:</span>
+      <button type="button" class="text-emerald-400 hover:underline"
+              onclick="document.getElementById('fw-bladelist').value='bothsmm'">bothsmm</button>
+      <button type="button" class="text-emerald-400 hover:underline"
+              onclick="document.getElementById('fw-bladelist').value='Swi2:fru0;Swi3:fru0;'">Swi2+Swi3</button>
+    </div>
+    <div id="apply-msg" class="mt-2 text-xs"></div>
+  </section>
+
+  <section class="card rounded p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-slate-300 font-bold">3. Status</h2>
+      <div class="flex items-center gap-3 text-xs">
+        <label class="flex items-center gap-1 text-slate-400">
+          <input type="checkbox" id="fw-poll" onchange="togglePoll()"> auto-poll (3s)
+        </label>
+        <button class="text-slate-400 hover:text-emerald-400" onclick="refreshStatus()">↻</button>
+        <button class="text-rose-400 hover:text-rose-300" onclick="cancelUpgrade()">cancel/cleanup</button>
+      </div>
+    </div>
+    <div id="fw-status" class="space-y-2">
+      <div class="text-xs text-slate-500">Click ↻ or enable auto-poll.</div>
+    </div>
+  </section>
+
+  <section class="card rounded p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-slate-300 font-bold">Recent firmware-web actions (audit)</h2>
+      <button class="text-xs text-slate-400 hover:text-emerald-400"
+              hx-get="/api/firmware-web/audit-tail"
+              hx-target="#fw-audit" hx-swap="innerHTML">
+        ↻ refresh
+      </button>
+    </div>
+    <div id="fw-audit"
+         hx-get="/api/firmware-web/audit-tail"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="text-xs text-slate-500">Loading…</div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+let pollTimer = null;
+
+function setMsg(elId, text, ok) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = "mt-2 text-xs " + (ok ? "text-emerald-400" : "text-rose-400");
+}
+
+async function uploadImage(ev) {
+  ev.preventDefault();
+  const fd = new FormData(document.getElementById('fw-upload-form'));
+  setMsg('upload-msg', 'uploading...', true);
+  try {
+    const r = await fetch('/api/firmware-web/upload', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+    setMsg('upload-msg', `uploaded ${j.filename} (${j.bytes} bytes)`, true);
+    refreshAudit();
+  } catch (e) {
+    setMsg('upload-msg', 'upload failed: ' + e.message, false);
+    refreshAudit();
+  }
+}
+
+async function refreshPreflight() {
+  const out = document.getElementById('preflight-out');
+  out.textContent = 'checking...';
+  out.className = 'text-xs text-amber-400';
+  try {
+    const r = await fetch('/api/firmware-web/preflight');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    const parts = [];
+    if (j.is_upgrading) {
+      parts.push('<span class="pill pill-err">⚠ chassis already upgrading</span>');
+    } else {
+      parts.push('<span class="pill pill-ok">chassis idle</span>');
+    }
+    for (const [smm, ok] of Object.entries(j.smm_checks || {})) {
+      parts.push(ok
+        ? `<span class="pill pill-ok">SMM${smm} ready</span>`
+        : `<span class="pill pill-err">SMM${smm} not ready</span>`);
+    }
+    out.innerHTML = parts.join(' ');
+    out.className = j.is_upgrading ? 'text-xs text-rose-400' : 'text-xs';
+  } catch (e) {
+    out.textContent = 'preflight error: ' + e.message;
+    out.className = 'text-xs text-rose-400';
+  }
+}
+
+async function applyUpgrade(ev) {
+  ev.preventDefault();
+  const fd = new FormData(document.getElementById('fw-apply-form'));
+  const snapBox = document.getElementById('snapshot-first');
+  fd.set('snapshot_first', snapBox && snapBox.checked ? 'true' : 'false');
+  const tok = fd.get('bladelist') || '';
+  const snap = snapBox && snapBox.checked;
+  const prompt = `This will FLASH firmware on: ${tok}\n` +
+                 (snap ? "(a chassis snapshot will run first — adds ~30-60s)\n" : "(NO snapshot — risky!)\n") +
+                 'Proceed?';
+  if (!tok || !confirm(prompt)) return;
+  setMsg('apply-msg', snap ? 'snapshotting then applying...' : 'applying...', true);
+  try {
+    const r = await fetch('/api/firmware-web/apply', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+    const snapMsg = j.snapshot_id ? ` (snapshot=${j.snapshot_id})` : '';
+    setMsg('apply-msg', `apply triggered: ${j.bladelist}${snapMsg}`, true);
+    document.getElementById('fw-poll').checked = true;
+    togglePoll();
+    refreshAudit();
+    refreshPreflight();
+  } catch (e) {
+    setMsg('apply-msg', 'apply failed: ' + e.message, false);
+    refreshAudit();
+  }
+}
+
+async function refreshStatus() {
+  const target = document.getElementById('fw-status');
+  try {
+    const r = await fetch('/api/firmware-web/status');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    if (!j.targets || j.targets.length === 0) {
+      target.innerHTML = '<div class="text-xs text-slate-500">No upgrade in progress.</div>';
+      if (pollTimer) { document.getElementById('fw-poll').checked = false; togglePoll(); }
+      return;
+    }
+    target.innerHTML = j.targets.map(t => {
+      const failed = t.retcode !== 0;
+      const cls = failed ? 'failed' : '';
+      return `
+        <div class="border border-slate-800 rounded p-2">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-slate-200">${t.name}</span>
+            <span class="text-xs ${failed ? 'text-rose-400' : 'text-emerald-400'}">
+              ${t.progress}% — ${t.progress_desp || ''}
+            </span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill ${cls}" style="width:${t.progress}%"></div></div>
+          ${failed ? `<div class="text-xs text-rose-300 mt-1">retcode=${t.retcode}: ${t.desp}</div>` : ''}
+        </div>`;
+    }).join('');
+    if (j.all_done && pollTimer) {
+      document.getElementById('fw-poll').checked = false; togglePoll();
+    }
+  } catch (e) {
+    target.innerHTML = `<div class="text-xs text-rose-400">status error: ${e.message}</div>`;
+  }
+}
+
+function togglePoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (document.getElementById('fw-poll').checked) {
+    refreshStatus();
+    pollTimer = setInterval(refreshStatus, 3000);
+  }
+}
+
+async function cancelUpgrade() {
+  if (!confirm('Cancel/cleanup the current upgrade buffer?')) return;
+  try {
+    const r = await fetch('/api/firmware-web/cancel', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    refreshStatus();
+    refreshAudit();
+    refreshPreflight();
+  } catch (e) { alert('cancel failed: ' + e.message); }
+}
+
+function refreshAudit() {
+  htmx.ajax('GET', '/api/firmware-web/audit-tail', '#fw-audit');
+}
+
+document.addEventListener('DOMContentLoaded', refreshPreflight);
+</script>
+
+</body>
+</html>
