@@ -86,14 +86,23 @@
     <h2 class="text-slate-300 font-bold mb-3">1. Upload firmware image</h2>
     <form id="fw-upload-form" enctype="multipart/form-data"
           onsubmit="uploadImage(event)">
-      <input type="file" name="file" accept=".hpm,.bin"
-             class="text-xs file:mr-3 file:bg-slate-800 file:text-slate-200 file:border-0 file:px-3 file:py-1 file:rounded">
-      <button type="submit"
-              class="ml-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded text-xs">
-        upload
-      </button>
+      <label id="fw-drop" for="fw-file"
+             class="block border-2 border-dashed border-slate-700 rounded-lg p-6 text-center cursor-pointer hover:border-slate-500 hover:bg-slate-900/40 transition">
+        <div class="text-slate-300 text-xs">
+          <span id="fw-drop-icon" class="text-2xl block mb-2 text-slate-500">⬆</span>
+          <span id="fw-drop-text">Drop a <code class="text-amber-300">.hpm</code> here, or click to browse</span>
+        </div>
+      </label>
+      <input id="fw-file" type="file" name="file" accept=".hpm,.bin" class="hidden"
+             onchange="onFileChosen(this)">
+      <div class="mt-2 flex items-center justify-between">
+        <div id="upload-msg" class="text-xs"></div>
+        <button type="submit" id="fw-upload-btn" disabled
+                class="bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed px-3 py-1 rounded text-xs">
+          upload
+        </button>
+      </div>
     </form>
-    <div id="upload-msg" class="mt-2 text-xs"></div>
   </section>
 
   <section class="card rounded p-4">
@@ -319,6 +328,48 @@ async function refreshPreflight() {
     out.className = 'text-xs text-rose-400';
   }
 }
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KiB';
+  return (n/1024/1024).toFixed(1) + ' MiB';
+}
+
+function onFileChosen(input) {
+  const f = input.files[0];
+  const text = document.getElementById('fw-drop-text');
+  const icon = document.getElementById('fw-drop-icon');
+  const btn = document.getElementById('fw-upload-btn');
+  if (!f) {
+    text.innerHTML = 'Drop a <code class="text-amber-300">.hpm</code> here, or click to browse';
+    icon.textContent = '⬆';
+    btn.disabled = true;
+    return;
+  }
+  text.innerHTML = `<span class="text-emerald-300">${f.name}</span> <span class="text-slate-500">(${fmtBytes(f.size)})</span>`;
+  icon.textContent = '✓';
+  icon.className = 'text-2xl block mb-2 text-emerald-400';
+  btn.disabled = false;
+}
+
+// Drag-and-drop wiring on the label.
+document.addEventListener('DOMContentLoaded', () => {
+  const drop = document.getElementById('fw-drop');
+  if (!drop) return;
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('border-emerald-500','bg-emerald-900/10');
+  }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('border-emerald-500','bg-emerald-900/10');
+  }));
+  drop.addEventListener('drop', e => {
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+      const input = document.getElementById('fw-file');
+      input.files = e.dataTransfer.files;
+      onFileChosen(input);
+    }
+  });
+});
 
 function toggleComponent(el) {
   if (el.classList.contains('component-absent')) return;

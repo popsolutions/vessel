@@ -3,55 +3,75 @@
     inventory error: {{ error }}
   </div>
 {% else %}
+{# Pre-bucket components into groups (single pass). #}
+{% set ns = namespace(smms=[], switches=[], blades=[]) %}
+{% for v in versions %}
+  {%- if v.component in ['smm', 'othersmm'] -%}
+    {%- set _ = ns.smms.append(v) -%}
+  {%- elif v.component.startswith('Swi') -%}
+    {%- set _ = ns.switches.append(v) -%}
+  {%- elif v.component.startswith('Slot') -%}
+    {%- set _ = ns.blades.append(v) -%}
+  {%- endif -%}
+{% endfor %}
+
+{% set smm_present = ns.smms | selectattr('present') | list | length %}
+{% set sw_present = ns.switches | selectattr('present') | list | length %}
+{% set blade_present = ns.blades | selectattr('present') | list | length %}
+
+<div class="text-xs mb-3 flex items-center gap-2 flex-wrap">
+  <span class="pill pill-ok">{{ smm_present }} SMM{{ '' if smm_present == 1 else 's' }}</span>
+  <span class="pill pill-ok">{{ sw_present }} switch{{ '' if sw_present == 1 else 'es' }}</span>
+  <span class="pill pill-ok">{{ blade_present }} blade{{ '' if blade_present == 1 else 's' }}</span>
+</div>
+
 <table class="w-full text-xs border-collapse">
   <thead>
     <tr class="text-slate-400 border-b border-slate-800">
       <th class="text-left py-1 pr-3">Component</th>
-      <th class="text-left py-1 pr-3">Present</th>
       <th class="text-left py-1 pr-3">BIOS</th>
       <th class="text-left py-1 pr-3">iMana</th>
       <th class="text-left py-1 pr-3">CPLD</th>
       <th class="text-left py-1 pr-3">FPGA / Software</th>
       <th class="text-left py-1 pr-3">Uboot</th>
-      <th class="text-left py-1">copy bladelist</th>
     </tr>
   </thead>
   <tbody>
-    {% for v in versions %}
-    <tr class="border-b border-slate-900/60 {% if not v.present %}opacity-40{% endif %}">
-      <td class="py-1 pr-3 text-slate-200">{{ v.component }}</td>
-      <td class="py-1 pr-3">
-        {% if v.present %}<span class="pill pill-ok">present</span>
-        {% else %}<span class="pill pill-na">absent</span>{% endif %}
+    {% macro section_row(title, count) %}
+    <tr class="bg-slate-900/60">
+      <td colspan="6" class="py-1 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        {{ title }}
+        <span class="text-slate-500 font-normal normal-case ml-2">{{ count }} present</span>
+      </td>
+    </tr>
+    {% endmacro %}
+
+    {% macro version_row(v) %}
+    <tr class="border-b border-slate-900/60 {% if not v.present %}opacity-30{% endif %}">
+      <td class="py-1 pr-3 text-slate-200 whitespace-nowrap">
+        {{ v.component }}
+        {% if not v.present %}<span class="pill pill-na ml-1">absent</span>{% endif %}
       </td>
       <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("BIOS Version", "—") }}</td>
       <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("Active iMana Version", "—") }}</td>
       <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("CPLD Version", "—") }}</td>
-      <td class="py-1 pr-3 text-slate-300">
-        {{ v.fields.get("FPGA Version", v.fields.get("Software Version", "—")) }}
-      </td>
-      <td class="py-1 pr-3 text-slate-300 truncate max-w-[14rem]">
-        {{ v.fields.get("Uboot Version", "—") }}
-      </td>
-      <td class="py-1">
-        {% if v.present %}
-          {% if v.component in ("smm", "othersmm") %}
-            <button class="text-emerald-400 hover:underline"
-                    onclick="document.getElementById('fw-bladelist').value='bothsmm'">
-              bothsmm
-            </button>
-          {% else %}
-            <button class="text-emerald-400 hover:underline"
-                    onclick="document.getElementById('fw-bladelist').value='{{ v.component }}:fru0;'">
-              {{ v.component }}:fru0;
-            </button>
-          {% endif %}
-        {% else %}
-          <span class="text-slate-600">—</span>
-        {% endif %}
-      </td>
+      <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("FPGA Version", v.fields.get("Software Version", "—")) }}</td>
+      <td class="py-1 pr-3 text-slate-300 truncate max-w-[14rem]">{{ v.fields.get("Uboot Version", "—") }}</td>
     </tr>
-    {% endfor %}
+    {% endmacro %}
+
+    {% if ns.smms %}
+      {{ section_row("Management Modules", smm_present) }}
+      {% for v in ns.smms %}{{ version_row(v) }}{% endfor %}
+    {% endif %}
+    {% if ns.switches %}
+      {{ section_row("Switches (CX310)", sw_present) }}
+      {% for v in ns.switches %}{{ version_row(v) }}{% endfor %}
+    {% endif %}
+    {% if ns.blades %}
+      {{ section_row("Compute Blades", blade_present) }}
+      {% for v in ns.blades %}{{ version_row(v) }}{% endfor %}
+    {% endif %}
   </tbody>
 </table>
 {% endif %}
