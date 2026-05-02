@@ -53,9 +53,10 @@ class TestFirmwareWebRoutes:
         client = _gui_client(tmp_path, monkeypatch)
         r = client.get("/firmware-web")
         assert r.status_code == 200
-        assert "Firmware (web API)" in r.text
+        assert "Firmware Upgrade" in r.text
         assert "fw-bladelist" in r.text
         assert "snapshot-first" in r.text
+        assert "/static/hmm.css" in r.text
 
     def test_apply_rejects_empty_bladelist(self, tmp_path, monkeypatch):
         client = _gui_client(tmp_path, monkeypatch)

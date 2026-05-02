@@ -1,44 +1,39 @@
 {% if not records %}
-  <div class="text-xs text-slate-500">No firmware-web actions logged yet.</div>
+  <div class="hmm-muted hmm-tiny">No firmware-web actions logged yet.</div>
 {% else %}
-<table class="w-full text-xs border-collapse">
+<table class="hmm-table">
   <thead>
-    <tr class="text-slate-400 border-b border-slate-800">
-      <th class="text-left py-1 pr-3">When (UTC)</th>
-      <th class="text-left py-1 pr-3">Actor</th>
-      <th class="text-left py-1 pr-3">Op</th>
-      <th class="text-left py-1 pr-3">Target</th>
-      <th class="text-left py-1 pr-3">Result</th>
-      <th class="text-left py-1 pr-3">Snapshot</th>
-      <th class="text-left py-1">Evidence</th>
+    <tr>
+      <th>When (UTC)</th>
+      <th>Actor</th>
+      <th>Op</th>
+      <th>Target</th>
+      <th>Result</th>
+      <th>Snapshot</th>
+      <th>Evidence</th>
     </tr>
   </thead>
   <tbody>
     {% for r in records %}
-    <tr class="border-b border-slate-900/60 align-top">
-      <td class="py-1 pr-3 text-slate-300 whitespace-nowrap">{{ r.ts }}</td>
-      <td class="py-1 pr-3 text-slate-300">{{ r.actor }}</td>
-      <td class="py-1 pr-3 text-slate-200">{{ r.op }}</td>
-      <td class="py-1 pr-3 text-slate-300">{{ r.target.kind }}/{{ r.target.id }}</td>
-      <td class="py-1 pr-3">
-        {% if r.result == "success" %}<span class="pill pill-ok">success</span>
-        {% elif r.result == "failed" %}<span class="pill pill-err">failed</span>
-        {% elif r.result == "in-progress" %}<span class="pill pill-na" style="color:#fde68a;border-color:rgba(240,171,0,.5);background:rgba(240,171,0,.15)">in-progress</span>
-        {% else %}<span class="pill pill-na">{{ r.result }}</span>{% endif %}
+    <tr>
+      <td class="hmm-mono">{{ r.ts }}</td>
+      <td>{{ r.actor }}</td>
+      <td class="hmm-mono"><b>{{ r.op }}</b></td>
+      <td class="hmm-mono">{{ r.target.kind }}/{{ r.target.id }}</td>
+      <td>
+        {% if r.result == "success" %}<span class="hmm-pill hmm-pill-ok">success</span>
+        {% elif r.result == "failed" %}<span class="hmm-pill hmm-pill-err">failed</span>
+        {% elif r.result == "in-progress" %}<span class="hmm-pill hmm-pill-warn">in-progress</span>
+        {% else %}<span class="hmm-pill hmm-pill-mute">{{ r.result }}</span>{% endif %}
       </td>
-      <td class="py-1 pr-3 whitespace-nowrap">
+      <td>
         {% if r.snapshot_id %}
-          <a href="/snapshots/{{ r.snapshot_id }}" class="text-emerald-400 hover:underline" target="_blank">{{ r.snapshot_id }}</a>
-        {% else %}
-          <span class="text-slate-600">—</span>
-        {% endif %}
+          <a href="/snapshots/{{ r.snapshot_id }}" target="_blank" class="hmm-mono">{{ r.snapshot_id }}</a>
+        {% else %}<span class="hmm-mute">—</span>{% endif %}
       </td>
-      <td class="py-1 text-slate-400">
-        {% if r.evidence %}
-          <code class="text-[11px]">{{ r.evidence | tojson }}</code>
-        {% else %}
-          <span class="text-slate-600">—</span>
-        {% endif %}
+      <td>
+        {% if r.evidence %}<code class="hmm-mono hmm-tiny">{{ r.evidence | tojson }}</code>
+        {% else %}<span class="hmm-mute">—</span>{% endif %}
       </td>
     </tr>
     {% endfor %}

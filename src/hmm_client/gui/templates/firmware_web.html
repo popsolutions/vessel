@@ -2,260 +2,216 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>hmm — Firmware (web API) ({{ host }})</title>
+  <title>HMM — Firmware Upgrade ({{ host }})</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/hmm.css">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <style>
-    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .card { background: #111827; border: 1px solid #1f2937; }
-    .pill { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11px; }
-    .pill-ok { background: rgba(19,190,183,.15); color: #5eead4; border: 1px solid rgba(19,190,183,.4); }
-    .pill-na { background: rgba(171,182,191,.15); color: #cbd5e1; border: 1px solid rgba(171,182,191,.4); }
-    .pill-err{ background: rgba(231,59,22,.15); color: #fca5a5; border: 1px solid rgba(231,59,22,.4); }
-    .progress-bar { background: #1f2937; height: 8px; border-radius: 999px; overflow: hidden; }
-    .progress-fill { background: #13beb7; height: 100%; transition: width 600ms ease; }
-    .progress-fill.failed { background: #e73b16; }
-    pre.fw { white-space: pre-wrap; font-size: 11px; color: #94a3b8; }
-    /* Chassis-shaped target picker */
-    .component {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      padding: 6px 8px;
-      cursor: pointer;
-      transition: all 150ms;
-      user-select: none;
-      min-width: 90px;
-    }
-    .component:hover { border-color: #64748b; background: #1e293b; }
-    .component.selected {
-      border-color: #13beb7;
-      background: rgba(19,190,183,0.18);
-      box-shadow: 0 0 0 1px #13beb7 inset;
-    }
-    .component.selected .comp-label { color: #5eead4; }
-    .component.component-absent {
-      background: transparent;
-      border: 1px dashed #334155;
-      color: #475569;
-      cursor: not-allowed;
-    }
-    .component.component-absent:hover { border-color: #334155; background: transparent; }
-    .comp-label { font-size: 12px; font-weight: 600; color: #e2e8f0; }
-    .comp-sub { font-size: 10px; color: #64748b; margin-top: 1px; }
-  </style>
 </head>
-<body class="text-sm">
+<body>
 
-<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-  <div class="flex items-center gap-4">
-    <a href="/" class="text-emerald-400 font-bold hover:underline">hmm</a>
-    <span class="text-slate-400">Firmware (web API) @</span>
-    <span class="text-slate-200">{{ host }}</span>
+<header class="hmm-header">
+  <div class="hmm-row">
+    <a href="/" class="hmm-brand">HMM</a>
+    <span class="hmm-host">Huawei E9000 · {{ host }}</span>
   </div>
-  <div class="flex items-center gap-4 text-xs">
-    <a href="/health" class="text-slate-300 hover:text-emerald-400">health →</a>
-    <a href="/snapshots" class="text-slate-300 hover:text-emerald-400">snapshots →</a>
-    <span class="text-slate-500">{{ now }}</span>
-  </div>
+  <nav class="hmm-nav">
+    <a href="/">Chassis</a>
+    <a href="/firmware-web" class="active">Firmware</a>
+    <a href="/health">Health</a>
+    <a href="/snapshots">Snapshots</a>
+    <span class="hmm-mute">{{ now }}</span>
+  </nav>
 </header>
 
-<main class="px-6 py-4 space-y-6 max-w-6xl">
+<main class="hmm-main">
 
-  <section class="card rounded p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-slate-300 font-bold">Firmware inventory</h2>
-      <button class="text-xs text-slate-400 hover:text-emerald-400"
+  <!-- Inventory -->
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Firmware inventory</span>
+      <button class="hmm-btn-ghost"
               hx-get="/api/firmware-web/inventory"
-              hx-target="#fw-inventory" hx-swap="innerHTML"
-              hx-indicator="#fw-spin">
+              hx-target="#fw-inventory" hx-swap="innerHTML">
         ↻ refresh
       </button>
     </div>
-    <div id="fw-spin" class="htmx-indicator text-xs text-amber-400">loading...</div>
-    <div id="fw-inventory"
-         hx-get="/api/firmware-web/inventory"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-      <div class="text-xs text-slate-500">Loading inventory…</div>
+    <div class="hmm-card-body">
+      <div id="fw-inventory"
+           hx-get="/api/firmware-web/inventory"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <div class="hmm-muted hmm-tiny">Loading inventory…</div>
+      </div>
     </div>
   </section>
 
-  <section class="card rounded p-4">
-    <h2 class="text-slate-300 font-bold mb-3">1. Upload firmware image</h2>
-    <form id="fw-upload-form" enctype="multipart/form-data"
-          onsubmit="uploadImage(event)">
-      <label id="fw-drop" for="fw-file"
-             class="block border-2 border-dashed border-slate-700 rounded-lg p-6 text-center cursor-pointer hover:border-slate-500 hover:bg-slate-900/40 transition">
-        <div class="text-slate-300 text-xs">
-          <span id="fw-drop-icon" class="text-2xl block mb-2 text-slate-500">⬆</span>
-          <span id="fw-drop-text">Drop a <code class="text-amber-300">.hpm</code> here, or click to browse</span>
+  <!-- Manifest diff -->
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Target manifest (YAML diff)</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-tiny hmm-muted hmm-mb-3">
+        Upload a YAML mapping <code>component</code> → <code>{field: target_value}</code>.
+        Aliases like <code>othersmm: smm</code> share a target set.
+        Field names match the inventory columns (BIOS, iMana, CPLD, Software, Uboot).
+      </p>
+      <form id="fw-manifest-form" enctype="multipart/form-data" onsubmit="diffManifest(event)">
+        <div class="hmm-row">
+          <input type="file" name="file" accept=".yaml,.yml,.txt" class="hmm-input" style="flex:1">
+          <button type="submit" class="hmm-btn">diff against chassis</button>
         </div>
-      </label>
-      <input id="fw-file" type="file" name="file" accept=".hpm,.bin" class="hidden"
-             onchange="onFileChosen(this)">
-      <div class="mt-2 flex items-center justify-between">
-        <div id="upload-msg" class="text-xs"></div>
-        <button type="submit" id="fw-upload-btn" disabled
-                class="bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed px-3 py-1 rounded text-xs">
-          upload
-        </button>
+      </form>
+      <div id="fw-manifest-out" class="hmm-mt-3">
+        <div class="hmm-muted hmm-tiny">No manifest uploaded yet.</div>
       </div>
-    </form>
-  </section>
-
-  <section class="card rounded p-4">
-    <h2 class="text-slate-300 font-bold mb-3">Manifest diff (target firmware versions)</h2>
-    <p class="text-xs text-slate-400 mb-3">
-      Upload a YAML declaring the firmware each component <em>should</em> have.
-      Format: <code class="text-amber-300">{component: {field: target}}</code>
-      with optional aliases like <code class="text-amber-300">othersmm: smm</code>.
-      Field names match the inventory table (<code>BIOS Version</code>,
-      <code>Active iMana Version</code>, <code>CPLD Version</code>,
-      <code>Software Version</code>, <code>Uboot Version</code>).
-    </p>
-    <form id="fw-manifest-form" enctype="multipart/form-data"
-          onsubmit="diffManifest(event)" class="flex items-center gap-2">
-      <input type="file" name="file" accept=".yaml,.yml,.txt"
-             class="text-xs file:mr-3 file:bg-slate-800 file:text-slate-200 file:border-0 file:px-3 file:py-1 file:rounded">
-      <button type="submit"
-              class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded text-xs">
-        diff
-      </button>
-    </form>
-    <div id="fw-manifest-out" class="mt-3">
-      <div class="text-xs text-slate-500">No manifest uploaded yet.</div>
     </div>
   </section>
 
-  <section class="card rounded p-4" id="preflight-card">
-    <h2 class="text-slate-300 font-bold mb-3 flex items-center justify-between">
-      <span>Pre-flight</span>
-      <button class="text-xs text-slate-400 hover:text-emerald-400" onclick="refreshPreflight()">↻</button>
-    </h2>
-    <div id="preflight-out" class="text-xs text-slate-500">click ↻ to check chassis upgrade state.</div>
+  <!-- Pre-flight -->
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Pre-flight check</span>
+      <button class="hmm-btn-ghost" onclick="refreshPreflight()">↻</button>
+    </div>
+    <div class="hmm-card-body">
+      <div id="preflight-out" class="hmm-tiny hmm-muted">click ↻ to check chassis state…</div>
+    </div>
   </section>
 
-  <section class="card rounded p-4">
-    <h2 class="text-slate-300 font-bold mb-3">2. Select targets &amp; apply</h2>
-
-    <!-- Chassis layout selector -->
-    <div class="chassis-picker mb-3">
-
-      <!-- SMMs row -->
-      <div class="flex items-center gap-2 mb-2">
-        <span class="text-[11px] text-slate-500 w-16 text-right">Mgmt:</span>
-        <div class="component" data-target="bothsmm" data-kind="smm" onclick="toggleComponent(this)">
-          <div class="comp-label">SMM Pair</div>
-          <div class="comp-sub">smm + othersmm</div>
-        </div>
-      </div>
-
-      <!-- Blade grid: 4 columns x 4 rows -->
-      <div class="flex items-start gap-2 mb-2">
-        <span class="text-[11px] text-slate-500 w-16 text-right pt-1">Blades:</span>
-        <div class="grid grid-cols-4 gap-1 flex-1">
-          {% for n in range(1, 17) %}
-            {% set populated = n in [1,2,3,4,8,9,10,11,12,16] %}
-            {% set storage = n in [13,14,15] %}
-            <div class="component {% if not populated and not storage %}component-absent{% endif %}"
-                 data-target="Slot{{n}}:fru0;"
-                 data-kind="{% if storage %}ch222{% else %}ch121{% endif %}"
-                 {% if populated or storage %}onclick="toggleComponent(this)"{% endif %}>
-              <div class="comp-label">Slot {{n}}</div>
-              <div class="comp-sub">{% if storage %}CH222{% elif populated %}CH121{% else %}empty{% endif %}</div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <!-- Switch row -->
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] text-slate-500 w-16 text-right">Switch:</span>
-        <div class="grid grid-cols-4 gap-1 flex-1">
-          {% for s in ["Swi1", "Swi2", "Swi3", "Swi4"] %}
-            {% set present = s in ["Swi2", "Swi3"] %}
-            <div class="component {% if not present %}component-absent{% endif %}"
-                 data-target="{{ s }}:fru0;" data-kind="switch"
-                 {% if present %}onclick="toggleComponent(this)"{% endif %}>
-              <div class="comp-label">{{ s }}</div>
-              <div class="comp-sub">{% if present %}CX310{% else %}empty{% endif %}</div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Quick selects -->
-    <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
-      <span class="text-slate-500">quick:</span>
-      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
-              onclick="selectKind('smm')">SMMs</button>
-      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
-              onclick="selectKind('switch')">Both switches</button>
-      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
-              onclick="selectKind('ch121')">CH121 blades (10)</button>
-      <button type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
-              onclick="selectKind('ch222')">CH222 blades (3)</button>
-      <button type="button" class="ml-auto px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400"
-              onclick="clearSelection()">clear</button>
-    </div>
-
-    <!-- Computed bladelist preview -->
-    <div class="text-xs mb-3 flex items-center gap-2">
-      <span class="text-slate-500">bladelist:</span>
-      <code id="bladelist-display" class="bg-slate-800 px-2 py-1 rounded flex-1 text-amber-300 truncate">(none selected)</code>
-    </div>
-
-    <form id="fw-apply-form" onsubmit="applyUpgrade(event)">
-      <input type="hidden" name="bladelist" id="fw-bladelist" value="">
-      <div class="flex items-center gap-3">
-        <button type="submit" id="fw-apply-btn" disabled
-                class="bg-rose-700 hover:bg-rose-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed px-4 py-1.5 rounded text-xs font-bold"
-                title="Triggers a real flash on the chassis">
-          apply firmware
-        </button>
-        <label class="flex items-center gap-2 text-xs text-slate-300">
-          <input type="checkbox" id="snapshot-first" name="snapshot_first" checked>
-          <span>snapshot chassis state first <span class="text-slate-500">(recommended)</span></span>
+  <!-- Step 1: Upload image -->
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">1. Upload firmware image</span></div>
+    <div class="hmm-card-body">
+      <form id="fw-upload-form" enctype="multipart/form-data" onsubmit="uploadImage(event)">
+        <label id="fw-drop" for="fw-file" class="hmm-drop">
+          <span id="fw-drop-icon" class="hmm-drop-icon">⬆</span>
+          <span id="fw-drop-text">Drop a <code>.hpm</code> file here, or click to browse</span>
         </label>
-      </div>
-    </form>
-    <div id="apply-msg" class="mt-2 text-xs"></div>
+        <input id="fw-file" type="file" name="file" accept=".hpm,.bin" style="display:none"
+               onchange="onFileChosen(this)">
+        <div class="hmm-row hmm-mt-2">
+          <div id="upload-msg" class="hmm-tiny hmm-spacer"></div>
+          <button type="submit" id="fw-upload-btn" class="hmm-btn-primary hmm-btn" disabled>upload to HMM</button>
+        </div>
+      </form>
+    </div>
   </section>
 
-  <section class="card rounded p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-slate-300 font-bold">3. Status</h2>
-      <div class="flex items-center gap-3 text-xs">
-        <label class="flex items-center gap-1 text-slate-400">
+  <!-- Step 2: Pick targets + Apply -->
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">2. Select targets and apply</span></div>
+    <div class="hmm-card-body">
+
+      <div class="hmm-chassis hmm-mb-3">
+
+        <div class="hmm-chassis-row">
+          <span class="hmm-chassis-label">Mgmt:</span>
+          <div class="hmm-chassis-cells cells-smm">
+            <div class="hmm-comp" data-target="bothsmm" data-kind="smm" onclick="toggleComponent(this)">
+              <div class="comp-label">SMM Pair (active + standby)</div>
+              <div class="comp-sub">smm + othersmm — flashed together</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hmm-chassis-row" style="align-items: stretch;">
+          <span class="hmm-chassis-label" style="padding-top:6px;">Blades:</span>
+          <div class="hmm-chassis-cells cells-blade">
+            {% for n in range(1, 17) %}
+              {% set populated = n in [1,2,3,4,8,9,10,11,12,16] %}
+              {% set storage = n in [13,14,15] %}
+              <div class="hmm-comp {% if not populated and not storage %}absent{% endif %}"
+                   data-target="Slot{{n}}:fru0;"
+                   data-kind="{% if storage %}ch222{% else %}ch121{% endif %}"
+                   {% if populated or storage %}onclick="toggleComponent(this)"{% endif %}>
+                <div class="comp-label">Slot {{n}}</div>
+                <div class="comp-sub">{% if storage %}CH222{% elif populated %}CH121{% else %}empty{% endif %}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="hmm-chassis-row">
+          <span class="hmm-chassis-label">Switch:</span>
+          <div class="hmm-chassis-cells cells-switch">
+            {% for s in ["Swi1", "Swi2", "Swi3", "Swi4"] %}
+              {% set present = s in ["Swi2", "Swi3"] %}
+              <div class="hmm-comp {% if not present %}absent{% endif %}"
+                   data-target="{{ s }}:fru0;" data-kind="switch"
+                   {% if present %}onclick="toggleComponent(this)"{% endif %}>
+                <div class="comp-label">{{ s }}</div>
+                <div class="comp-sub">{% if present %}CX310{% else %}empty{% endif %}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+      </div>
+
+      <div class="hmm-row hmm-mb-2 hmm-tiny">
+        <span class="hmm-muted">quick:</span>
+        <button class="hmm-btn" onclick="selectKind('smm')">SMMs</button>
+        <button class="hmm-btn" onclick="selectKind('switch')">Both switches</button>
+        <button class="hmm-btn" onclick="selectKind('ch121')">CH121 blades (10)</button>
+        <button class="hmm-btn" onclick="selectKind('ch222')">CH222 blades (3)</button>
+        <span class="hmm-spacer"></span>
+        <button class="hmm-btn" onclick="clearSelection()">clear</button>
+      </div>
+
+      <div class="hmm-row hmm-mb-3">
+        <span class="hmm-muted hmm-tiny">bladelist:</span>
+        <code id="bladelist-display" class="hmm-mono"
+              style="background:#f7f8fa; border:1px solid var(--hmm-card-bd); padding:4px 8px; border-radius:3px; flex:1; color: var(--hmm-accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">(none selected)</code>
+      </div>
+
+      <form id="fw-apply-form" onsubmit="applyUpgrade(event)">
+        <input type="hidden" name="bladelist" id="fw-bladelist" value="">
+        <div class="hmm-row">
+          <button type="submit" id="fw-apply-btn" class="hmm-btn-danger hmm-btn" disabled
+                  title="Triggers a real flash on the chassis">
+            apply firmware
+          </button>
+          <label class="hmm-row-tight">
+            <input type="checkbox" id="snapshot-first" name="snapshot_first" checked>
+            <span class="hmm-tiny">snapshot chassis state first <span class="hmm-muted">(recommended)</span></span>
+          </label>
+        </div>
+      </form>
+      <div id="apply-msg" class="hmm-tiny hmm-mt-2"></div>
+    </div>
+  </section>
+
+  <!-- Status -->
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">3. Upgrade status</span>
+      <div class="hmm-row hmm-tiny">
+        <label class="hmm-row-tight">
           <input type="checkbox" id="fw-poll" onchange="togglePoll()"> auto-poll (3s)
         </label>
-        <button class="text-slate-400 hover:text-emerald-400" onclick="refreshStatus()">↻</button>
-        <button class="text-rose-400 hover:text-rose-300" onclick="cancelUpgrade()">cancel/cleanup</button>
+        <button class="hmm-btn-ghost" onclick="refreshStatus()">↻</button>
+        <button class="hmm-btn-ghost" onclick="cancelUpgrade()" style="color: var(--hmm-danger);">cancel/cleanup</button>
       </div>
     </div>
-    <div id="fw-status" class="space-y-2">
-      <div class="text-xs text-slate-500">Click ↻ or enable auto-poll.</div>
+    <div class="hmm-card-body">
+      <div id="fw-status">
+        <div class="hmm-muted hmm-tiny">Click ↻ or enable auto-poll.</div>
+      </div>
     </div>
   </section>
 
-  <section class="card rounded p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-slate-300 font-bold">Recent firmware-web actions (audit)</h2>
-      <button class="text-xs text-slate-400 hover:text-emerald-400"
-              hx-get="/api/firmware-web/audit-tail"
-              hx-target="#fw-audit" hx-swap="innerHTML">
+  <!-- Recent audit -->
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Recent firmware-web actions (audit log)</span>
+      <button class="hmm-btn-ghost"
+              hx-get="/api/firmware-web/audit-tail" hx-target="#fw-audit" hx-swap="innerHTML">
         ↻ refresh
       </button>
     </div>
-    <div id="fw-audit"
-         hx-get="/api/firmware-web/audit-tail"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-      <div class="text-xs text-slate-500">Loading…</div>
+    <div class="hmm-card-body">
+      <div id="fw-audit" hx-get="/api/firmware-web/audit-tail" hx-trigger="load" hx-swap="innerHTML">
+        <div class="hmm-muted hmm-tiny">Loading…</div>
+      </div>
     </div>
   </section>
 
@@ -263,71 +219,7 @@
 
 <script>
 let pollTimer = null;
-let lastAllDone = true;  // tracks edge from in-progress -> done so we re-verify once
-
-function setMsg(elId, text, ok) {
-  const el = document.getElementById(elId);
-  el.textContent = text;
-  el.className = "mt-2 text-xs " + (ok ? "text-emerald-400" : "text-rose-400");
-}
-
-async function uploadImage(ev) {
-  ev.preventDefault();
-  const fd = new FormData(document.getElementById('fw-upload-form'));
-  setMsg('upload-msg', 'uploading...', true);
-  try {
-    const r = await fetch('/api/firmware-web/upload', { method: 'POST', body: fd });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
-    setMsg('upload-msg', `uploaded ${j.filename} (${j.bytes} bytes)`, true);
-    refreshAudit();
-  } catch (e) {
-    setMsg('upload-msg', 'upload failed: ' + e.message, false);
-    refreshAudit();
-  }
-}
-
-async function refreshPreflight() {
-  const out = document.getElementById('preflight-out');
-  out.textContent = 'checking...';
-  out.className = 'text-xs text-amber-400';
-  try {
-    const r = await fetch('/api/firmware-web/preflight');
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
-    const parts = [];
-    if (j.is_upgrading) {
-      parts.push('<span class="pill pill-err">⚠ chassis already upgrading</span>');
-    } else {
-      parts.push('<span class="pill pill-ok">chassis idle</span>');
-    }
-    for (const [smm, ok] of Object.entries(j.smm_checks || {})) {
-      parts.push(ok
-        ? `<span class="pill pill-ok">SMM${smm} ready</span>`
-        : `<span class="pill pill-err">SMM${smm} not ready</span>`);
-    }
-    if (j.alarms) {
-      if (j.alarms.total === 0) {
-        parts.push('<span class="pill pill-ok">no active alarms</span>');
-      } else {
-        if (j.alarms.critical) {
-          parts.push(`<a href="/health" target="_blank" class="pill" style="background:rgba(231,59,22,.15);color:#fca5a5;border:1px solid rgba(231,59,22,.4)">${j.alarms.critical} critical alarm(s) — review →</a>`);
-        }
-        if (j.alarms.major) {
-          parts.push(`<a href="/health" target="_blank" class="pill" style="background:rgba(240,171,0,.15);color:#fde68a;border:1px solid rgba(240,171,0,.5)">${j.alarms.major} major</a>`);
-        }
-        if (j.alarms.minor) {
-          parts.push(`<span class="pill pill-na">${j.alarms.minor} minor</span>`);
-        }
-      }
-    }
-    out.innerHTML = parts.join(' ');
-    out.className = j.is_upgrading ? 'text-xs text-rose-400' : 'text-xs';
-  } catch (e) {
-    out.textContent = 'preflight error: ' + e.message;
-    out.className = 'text-xs text-rose-400';
-  }
-}
+let lastAllDone = true;
 
 function fmtBytes(n) {
   if (n < 1024) return n + ' B';
@@ -335,85 +227,93 @@ function fmtBytes(n) {
   return (n/1024/1024).toFixed(1) + ' MiB';
 }
 
+function setMsg(id, text, ok) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'hmm-tiny ' + (ok ? 'hmm-pill hmm-pill-ok' : 'hmm-pill hmm-pill-err');
+}
+
 function onFileChosen(input) {
   const f = input.files[0];
   const text = document.getElementById('fw-drop-text');
   const icon = document.getElementById('fw-drop-icon');
-  const btn = document.getElementById('fw-upload-btn');
+  const drop = document.getElementById('fw-drop');
+  const btn  = document.getElementById('fw-upload-btn');
   if (!f) {
-    text.innerHTML = 'Drop a <code class="text-amber-300">.hpm</code> here, or click to browse';
+    text.innerHTML = 'Drop a <code>.hpm</code> file here, or click to browse';
     icon.textContent = '⬆';
+    drop.classList.remove('armed');
     btn.disabled = true;
     return;
   }
-  text.innerHTML = `<span class="text-emerald-300">${f.name}</span> <span class="text-slate-500">(${fmtBytes(f.size)})</span>`;
+  text.innerHTML = `<b>${f.name}</b> <span class="hmm-mute">(${fmtBytes(f.size)})</span>`;
   icon.textContent = '✓';
-  icon.className = 'text-2xl block mb-2 text-emerald-400';
+  drop.classList.add('armed');
   btn.disabled = false;
 }
 
-// Drag-and-drop wiring on the label.
 document.addEventListener('DOMContentLoaded', () => {
   const drop = document.getElementById('fw-drop');
-  if (!drop) return;
-  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
-    e.preventDefault(); drop.classList.add('border-emerald-500','bg-emerald-900/10');
-  }));
-  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
-    e.preventDefault(); drop.classList.remove('border-emerald-500','bg-emerald-900/10');
-  }));
-  drop.addEventListener('drop', e => {
-    if (e.dataTransfer && e.dataTransfer.files.length) {
-      const input = document.getElementById('fw-file');
-      input.files = e.dataTransfer.files;
-      onFileChosen(input);
-    }
-  });
+  if (drop) {
+    ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); drop.classList.add('armed');
+    }));
+    ['dragleave'].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault();
+      if (!document.getElementById('fw-file').files.length) drop.classList.remove('armed');
+    }));
+    drop.addEventListener('drop', e => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        const input = document.getElementById('fw-file');
+        input.files = e.dataTransfer.files;
+        onFileChosen(input);
+      }
+    });
+  }
+  refreshPreflight();
 });
 
 function toggleComponent(el) {
-  if (el.classList.contains('component-absent')) return;
+  if (el.classList.contains('absent')) return;
   el.classList.toggle('selected');
   recomputeBladelist();
 }
-
 function selectKind(kind) {
-  document.querySelectorAll('.component').forEach(el => {
-    if (el.classList.contains('component-absent')) return;
+  document.querySelectorAll('.hmm-comp').forEach(el => {
+    if (el.classList.contains('absent')) return;
     if (el.dataset.kind === kind) el.classList.add('selected');
   });
   recomputeBladelist();
 }
-
 function clearSelection() {
-  document.querySelectorAll('.component.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.hmm-comp.selected').forEach(el => el.classList.remove('selected'));
   recomputeBladelist();
 }
-
 function recomputeBladelist() {
-  const selected = [...document.querySelectorAll('.component.selected')];
-  // The 'bothsmm' alias collapses both SMMs into a single token; if it's
-  // selected alongside individual things the HMM might still accept the
-  // 'bothsmm;Slot1:fru0;' shape, but we play safe and require it to be solo.
-  const tokens = selected.map(el => el.dataset.target);
+  const tokens = [...document.querySelectorAll('.hmm-comp.selected')].map(e => e.dataset.target);
   let list = '';
-  if (tokens.length === 1 && tokens[0] === 'bothsmm') {
-    list = 'bothsmm';
-  } else if (tokens.length === 1 && tokens[0].endsWith(';')) {
-    list = tokens[0];
-  } else if (tokens.length > 1 && tokens.includes('bothsmm')) {
-    // mix of SMM-pair + others — still valid shape per captures
-    list = tokens.join('');
-    if (!list.endsWith(';')) list += ';';
-  } else {
-    list = tokens.join('');
+  if (tokens.length === 1 && tokens[0] === 'bothsmm') list = 'bothsmm';
+  else if (tokens.length === 1) list = tokens[0];
+  else list = tokens.join('');
+  document.getElementById('bladelist-display').textContent = list || '(none selected)';
+  document.getElementById('fw-bladelist').value = list;
+  document.getElementById('fw-apply-btn').disabled = !list;
+}
+
+async function uploadImage(ev) {
+  ev.preventDefault();
+  const fd = new FormData(document.getElementById('fw-upload-form'));
+  setMsg('upload-msg', 'uploading…', true);
+  try {
+    const r = await fetch('/api/firmware-web/upload', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+    setMsg('upload-msg', `uploaded ${j.filename} (${j.bytes} bytes)`, true);
+  } catch (e) {
+    setMsg('upload-msg', 'upload failed: ' + e.message, false);
   }
-  const display = document.getElementById('bladelist-display');
-  const hidden = document.getElementById('fw-bladelist');
-  const btn = document.getElementById('fw-apply-btn');
-  display.textContent = list || '(none selected)';
-  hidden.value = list;
-  btn.disabled = !list;
+  refreshAudit();
 }
 
 async function applyUpgrade(ev) {
@@ -424,10 +324,9 @@ async function applyUpgrade(ev) {
   const tok = fd.get('bladelist') || '';
   const snap = snapBox && snapBox.checked;
   const prompt = `This will FLASH firmware on: ${tok}\n` +
-                 (snap ? "(a chassis snapshot will run first — adds ~30-60s)\n" : "(NO snapshot — risky!)\n") +
-                 'Proceed?';
+                 (snap ? '(a chassis snapshot will run first)\n' : '(NO snapshot — risky!)\n') + 'Proceed?';
   if (!tok || !confirm(prompt)) return;
-  setMsg('apply-msg', snap ? 'snapshotting then applying...' : 'applying...', true);
+  setMsg('apply-msg', snap ? 'snapshotting then applying…' : 'applying…', true);
   try {
     const r = await fetch('/api/firmware-web/apply', { method: 'POST', body: fd });
     const j = await r.json().catch(() => ({}));
@@ -435,14 +334,13 @@ async function applyUpgrade(ev) {
     const snapMsg = j.snapshot_id ? ` (snapshot=${j.snapshot_id})` : '';
     setMsg('apply-msg', `apply triggered: ${j.bladelist}${snapMsg}`, true);
     document.getElementById('fw-poll').checked = true;
-    lastAllDone = false;  // reset edge detector so post-flash verify fires
+    lastAllDone = false;
     togglePoll();
-    refreshAudit();
-    refreshPreflight();
   } catch (e) {
     setMsg('apply-msg', 'apply failed: ' + e.message, false);
-    refreshAudit();
   }
+  refreshAudit();
+  refreshPreflight();
 }
 
 async function refreshStatus() {
@@ -452,38 +350,30 @@ async function refreshStatus() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
     if (!j.targets || j.targets.length === 0) {
-      target.innerHTML = '<div class="text-xs text-slate-500">No upgrade in progress.</div>';
+      target.innerHTML = '<div class="hmm-muted hmm-tiny">No upgrade in progress.</div>';
       if (pollTimer) { document.getElementById('fw-poll').checked = false; togglePoll(); }
-      lastAllDone = true;
-      return;
+      lastAllDone = true; return;
     }
-    // Edge detection: if we transition from in-progress to all_done, re-verify.
-    if (!lastAllDone && j.all_done) {
-      lastAllDone = true;
-      postFlashVerify(j.any_failed);
-    } else if (!j.all_done) {
-      lastAllDone = false;
-    }
+    if (!lastAllDone && j.all_done) { lastAllDone = true; postFlashVerify(j.any_failed); }
+    else if (!j.all_done) lastAllDone = false;
     target.innerHTML = j.targets.map(t => {
       const failed = t.retcode !== 0;
-      const cls = failed ? 'failed' : '';
       return `
-        <div class="border border-slate-800 rounded p-2">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-slate-200">${t.name}</span>
-            <span class="text-xs ${failed ? 'text-rose-400' : 'text-emerald-400'}">
+        <div style="border:1px solid var(--hmm-card-bd); border-radius:3px; padding:8px; margin-bottom:6px; background:#fafbfd;">
+          <div class="hmm-row hmm-mb-2">
+            <b style="color: var(--hmm-title);">${t.name}</b>
+            <span class="hmm-spacer"></span>
+            <span class="hmm-tiny ${failed ? 'hmm-pill hmm-pill-err' : 'hmm-pill hmm-pill-ok'}">
               ${t.progress}% — ${t.progress_desp || ''}
             </span>
           </div>
-          <div class="progress-bar"><div class="progress-fill ${cls}" style="width:${t.progress}%"></div></div>
-          ${failed ? `<div class="text-xs text-rose-300 mt-1">retcode=${t.retcode}: ${t.desp}</div>` : ''}
+          <div class="hmm-progress"><div class="hmm-progress-fill ${failed?'failed':''}" style="width:${t.progress}%"></div></div>
+          ${failed ? `<div class="hmm-tiny hmm-mt-2" style="color: var(--hmm-danger);">retcode=${t.retcode}: ${t.desp}</div>` : ''}
         </div>`;
     }).join('');
-    if (j.all_done && pollTimer) {
-      document.getElementById('fw-poll').checked = false; togglePoll();
-    }
+    if (j.all_done && pollTimer) { document.getElementById('fw-poll').checked = false; togglePoll(); }
   } catch (e) {
-    target.innerHTML = `<div class="text-xs text-rose-400">status error: ${e.message}</div>`;
+    target.innerHTML = `<div class="hmm-alert hmm-alert-error">status error: ${e.message}</div>`;
   }
 }
 
@@ -501,53 +391,67 @@ async function cancelUpgrade() {
     const r = await fetch('/api/firmware-web/cancel', { method: 'POST' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
-    refreshStatus();
-    refreshAudit();
-    refreshPreflight();
+    refreshStatus(); refreshAudit(); refreshPreflight();
   } catch (e) { alert('cancel failed: ' + e.message); }
 }
 
-function refreshAudit() {
-  htmx.ajax('GET', '/api/firmware-web/audit-tail', '#fw-audit');
-}
+function refreshAudit() { htmx.ajax('GET', '/api/firmware-web/audit-tail', '#fw-audit'); }
 
 function postFlashVerify(anyFailed) {
-  // Banner above status to make it visible the inventory is being refreshed.
   const target = document.getElementById('fw-status');
   const banner = document.createElement('div');
-  banner.className = anyFailed
-    ? 'border border-rose-700 bg-rose-900/30 text-rose-200 text-xs p-2 rounded mb-2'
-    : 'border border-emerald-700 bg-emerald-900/30 text-emerald-200 text-xs p-2 rounded mb-2';
+  banner.className = anyFailed ? 'hmm-alert hmm-alert-error hmm-mb-2' : 'hmm-alert hmm-alert-success hmm-mb-2';
   banner.textContent = anyFailed
-    ? 'Flash terminated with failures — refreshing inventory + preflight + audit to capture state...'
-    : 'Flash complete — refreshing inventory + preflight + audit to confirm new versions...';
+    ? 'Flash terminated with failures — refreshing inventory + preflight + audit to capture state…'
+    : 'Flash complete — refreshing inventory + preflight + audit to confirm new versions…';
   target.parentNode.insertBefore(banner, target);
   setTimeout(() => banner.remove(), 12000);
-  // Kick off all three reads in parallel; HTMX handles each independently.
   htmx.ajax('GET', '/api/firmware-web/inventory', '#fw-inventory');
-  refreshAudit();
-  refreshPreflight();
+  refreshAudit(); refreshPreflight();
+}
+
+async function refreshPreflight() {
+  const out = document.getElementById('preflight-out');
+  out.innerHTML = '<span class="hmm-tiny hmm-muted">checking…</span>';
+  try {
+    const r = await fetch('/api/firmware-web/preflight');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    const parts = [];
+    if (j.is_upgrading) parts.push('<span class="hmm-pill hmm-pill-err">⚠ chassis already upgrading</span>');
+    else parts.push('<span class="hmm-pill hmm-pill-ok">chassis idle</span>');
+    for (const [smm, ok] of Object.entries(j.smm_checks || {})) {
+      parts.push(ok ? `<span class="hmm-pill hmm-pill-ok">SMM${smm} ready</span>`
+                    : `<span class="hmm-pill hmm-pill-err">SMM${smm} not ready</span>`);
+    }
+    if (j.alarms) {
+      if (j.alarms.total === 0) parts.push('<span class="hmm-pill hmm-pill-ok">no active alarms</span>');
+      else {
+        if (j.alarms.critical) parts.push(`<a href="/health" target="_blank" class="hmm-pill hmm-pill-err">${j.alarms.critical} critical alarm(s) →</a>`);
+        if (j.alarms.major)    parts.push(`<a href="/health" target="_blank" class="hmm-pill hmm-pill-warn">${j.alarms.major} major</a>`);
+        if (j.alarms.minor)    parts.push(`<span class="hmm-pill hmm-pill-mute">${j.alarms.minor} minor</span>`);
+      }
+    }
+    out.innerHTML = `<div class="hmm-row" style="flex-wrap:wrap; gap:6px;">${parts.join('')}</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="hmm-alert hmm-alert-error">preflight error: ${e.message}</div>`;
+  }
 }
 
 async function diffManifest(ev) {
   ev.preventDefault();
   const out = document.getElementById('fw-manifest-out');
-  out.innerHTML = '<div class="text-xs text-amber-400">diffing... (loads inventory, ~20s first time)</div>';
+  out.innerHTML = '<div class="hmm-tiny hmm-muted">diffing… (loads inventory, ~17s first time)</div>';
   const fd = new FormData(document.getElementById('fw-manifest-form'));
   try {
     const r = await fetch('/api/firmware-web/manifest-diff', { method: 'POST', body: fd });
     const html = await r.text();
-    if (!r.ok) {
-      out.innerHTML = `<div class="text-xs text-rose-400">HTTP ${r.status}: ${html.slice(0, 200)}</div>`;
-      return;
-    }
+    if (!r.ok) { out.innerHTML = `<div class="hmm-alert hmm-alert-error">HTTP ${r.status}</div>`; return; }
     out.innerHTML = html;
   } catch (e) {
-    out.innerHTML = `<div class="text-xs text-rose-400">manifest diff error: ${e.message}</div>`;
+    out.innerHTML = `<div class="hmm-alert hmm-alert-error">manifest diff error: ${e.message}</div>`;
   }
 }
-
-document.addEventListener('DOMContentLoaded', refreshPreflight);
 </script>
 
 </body>

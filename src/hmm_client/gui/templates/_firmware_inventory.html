@@ -1,77 +1,51 @@
 {% if error %}
-  <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded">
-    inventory error: {{ error }}
-  </div>
+  <div class="hmm-alert hmm-alert-error">inventory error: {{ error }}</div>
 {% else %}
-{# Pre-bucket components into groups (single pass). #}
 {% set ns = namespace(smms=[], switches=[], blades=[]) %}
 {% for v in versions %}
-  {%- if v.component in ['smm', 'othersmm'] -%}
-    {%- set _ = ns.smms.append(v) -%}
-  {%- elif v.component.startswith('Swi') -%}
-    {%- set _ = ns.switches.append(v) -%}
-  {%- elif v.component.startswith('Slot') -%}
-    {%- set _ = ns.blades.append(v) -%}
+  {%- if v.component in ['smm', 'othersmm'] -%}{%- set _ = ns.smms.append(v) -%}
+  {%- elif v.component.startswith('Swi') -%}{%- set _ = ns.switches.append(v) -%}
+  {%- elif v.component.startswith('Slot') -%}{%- set _ = ns.blades.append(v) -%}
   {%- endif -%}
 {% endfor %}
-
 {% set smm_present = ns.smms | selectattr('present') | list | length %}
 {% set sw_present = ns.switches | selectattr('present') | list | length %}
 {% set blade_present = ns.blades | selectattr('present') | list | length %}
 
-<div class="text-xs mb-3 flex items-center gap-2 flex-wrap">
-  <span class="pill pill-ok">{{ smm_present }} SMM{{ '' if smm_present == 1 else 's' }}</span>
-  <span class="pill pill-ok">{{ sw_present }} switch{{ '' if sw_present == 1 else 'es' }}</span>
-  <span class="pill pill-ok">{{ blade_present }} blade{{ '' if blade_present == 1 else 's' }}</span>
+<div class="hmm-row hmm-mb-3" style="flex-wrap:wrap; gap:6px;">
+  <span class="hmm-pill hmm-pill-info">{{ smm_present }} SMM{{ '' if smm_present == 1 else 's' }}</span>
+  <span class="hmm-pill hmm-pill-info">{{ sw_present }} switch{{ '' if sw_present == 1 else 'es' }}</span>
+  <span class="hmm-pill hmm-pill-info">{{ blade_present }} blade{{ '' if blade_present == 1 else 's' }}</span>
 </div>
 
-<table class="w-full text-xs border-collapse">
+<table class="hmm-table">
   <thead>
-    <tr class="text-slate-400 border-b border-slate-800">
-      <th class="text-left py-1 pr-3">Component</th>
-      <th class="text-left py-1 pr-3">BIOS</th>
-      <th class="text-left py-1 pr-3">iMana</th>
-      <th class="text-left py-1 pr-3">CPLD</th>
-      <th class="text-left py-1 pr-3">FPGA / Software</th>
-      <th class="text-left py-1 pr-3">Uboot</th>
+    <tr>
+      <th>Component</th>
+      <th>BIOS</th>
+      <th>iMana</th>
+      <th>CPLD</th>
+      <th>FPGA / Software</th>
+      <th>Uboot</th>
     </tr>
   </thead>
   <tbody>
     {% macro section_row(title, count) %}
-    <tr class="bg-slate-900/60">
-      <td colspan="6" class="py-1 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-        {{ title }}
-        <span class="text-slate-500 font-normal normal-case ml-2">{{ count }} present</span>
-      </td>
-    </tr>
+    <tr class="section-row"><td colspan="6">{{ title }} <span class="hmm-mute" style="font-weight:normal;">— {{ count }} present</span></td></tr>
     {% endmacro %}
-
     {% macro version_row(v) %}
-    <tr class="border-b border-slate-900/60 {% if not v.present %}opacity-30{% endif %}">
-      <td class="py-1 pr-3 text-slate-200 whitespace-nowrap">
-        {{ v.component }}
-        {% if not v.present %}<span class="pill pill-na ml-1">absent</span>{% endif %}
-      </td>
-      <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("BIOS Version", "—") }}</td>
-      <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("Active iMana Version", "—") }}</td>
-      <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("CPLD Version", "—") }}</td>
-      <td class="py-1 pr-3 text-slate-300">{{ v.fields.get("FPGA Version", v.fields.get("Software Version", "—")) }}</td>
-      <td class="py-1 pr-3 text-slate-300 truncate max-w-[14rem]">{{ v.fields.get("Uboot Version", "—") }}</td>
+    <tr class="{% if not v.present %}muted{% endif %}">
+      <td class="hmm-mono"><b>{{ v.component }}</b>{% if not v.present %} <span class="hmm-pill hmm-pill-mute">absent</span>{% endif %}</td>
+      <td class="hmm-mono">{{ v.fields.get("BIOS Version", "—") }}</td>
+      <td class="hmm-mono">{{ v.fields.get("Active iMana Version", "—") }}</td>
+      <td class="hmm-mono">{{ v.fields.get("CPLD Version", "—") }}</td>
+      <td class="hmm-mono">{{ v.fields.get("FPGA Version", v.fields.get("Software Version", "—")) }}</td>
+      <td class="hmm-mono" style="max-width:14rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ v.fields.get("Uboot Version", "—") }}</td>
     </tr>
     {% endmacro %}
-
-    {% if ns.smms %}
-      {{ section_row("Management Modules", smm_present) }}
-      {% for v in ns.smms %}{{ version_row(v) }}{% endfor %}
-    {% endif %}
-    {% if ns.switches %}
-      {{ section_row("Switches (CX310)", sw_present) }}
-      {% for v in ns.switches %}{{ version_row(v) }}{% endfor %}
-    {% endif %}
-    {% if ns.blades %}
-      {{ section_row("Compute Blades", blade_present) }}
-      {% for v in ns.blades %}{{ version_row(v) }}{% endfor %}
-    {% endif %}
+    {% if ns.smms %}{{ section_row("Management Modules", smm_present) }}{% for v in ns.smms %}{{ version_row(v) }}{% endfor %}{% endif %}
+    {% if ns.switches %}{{ section_row("Switches (CX310)", sw_present) }}{% for v in ns.switches %}{{ version_row(v) }}{% endfor %}{% endif %}
+    {% if ns.blades %}{{ section_row("Compute Blades", blade_present) }}{% for v in ns.blades %}{{ version_row(v) }}{% endfor %}{% endif %}
   </tbody>
 </table>
 {% endif %}

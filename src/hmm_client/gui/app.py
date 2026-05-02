@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .. import auth as _auth
@@ -77,6 +78,7 @@ if not _auth.is_enabled():
     )
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 app = FastAPI(
@@ -89,6 +91,10 @@ app = FastAPI(
     # query parameter instead — TODO follow-up).
     dependencies=[Depends(_gui_auth)],
 )
+
+# Static assets — Huawei-style CSS, future sprite images, etc.
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 _tasks: dict[str, dict[str, Any]] = {}
 _tasks_lock = threading.Lock()
