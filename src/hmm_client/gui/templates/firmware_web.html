@@ -214,6 +214,21 @@ async function refreshPreflight() {
         ? `<span class="pill pill-ok">SMM${smm} ready</span>`
         : `<span class="pill pill-err">SMM${smm} not ready</span>`);
     }
+    if (j.alarms) {
+      if (j.alarms.total === 0) {
+        parts.push('<span class="pill pill-ok">no active alarms</span>');
+      } else {
+        if (j.alarms.critical) {
+          parts.push(`<a href="/health" target="_blank" class="pill" style="background:rgba(231,59,22,.15);color:#fca5a5;border:1px solid rgba(231,59,22,.4)">${j.alarms.critical} critical alarm(s) — review →</a>`);
+        }
+        if (j.alarms.major) {
+          parts.push(`<a href="/health" target="_blank" class="pill" style="background:rgba(240,171,0,.15);color:#fde68a;border:1px solid rgba(240,171,0,.5)">${j.alarms.major} major</a>`);
+        }
+        if (j.alarms.minor) {
+          parts.push(`<span class="pill pill-na">${j.alarms.minor} minor</span>`);
+        }
+      }
+    }
     out.innerHTML = parts.join(' ');
     out.className = j.is_upgrading ? 'text-xs text-rose-400' : 'text-xs';
   } catch (e) {

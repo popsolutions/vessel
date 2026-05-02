@@ -1004,7 +1004,6 @@ def firmware_web_preflight(request: Request) -> JSONResponse:
         with _hmm_web(request) as c:
             inv = InventoryModule(c)
             is_up = inv.is_upgrading()
-            fw = FirmwareModule(c)
             checks: dict[str, bool] = {}
             for smmtype in ("1", "2"):
                 r = c.post(
@@ -1014,9 +1013,25 @@ def firmware_web_preflight(request: Request) -> JSONResponse:
                     referer_path="/system_manage_smm.html?chassisid=0",
                 )
                 checks[smmtype] = (r.retcode == 0)
+            try:
+                alarms = HealthModule(c).list_alarms()
+                alarms_summary = {
+                    "total": alarms.total,
+                    "critical": alarms.critical,
+                    "major": alarms.major,
+                    "minor": alarms.minor,
+                }
+            except HMMWebError:
+                alarms_summary = None
     except HMMWebError as exc:
         raise HTTPException(502, f"hmm preflight failed: {exc}")
-    return JSONResponse({"is_upgrading": is_up, "smm_checks": checks})
+    return JSONResponse(
+        {
+            "is_upgrading": is_up,
+            "smm_checks": checks,
+            "alarms": alarms_summary,
+        }
+    )
 
 
 @app.get("/api/firmware-web/audit-tail", response_class=HTMLResponse)
