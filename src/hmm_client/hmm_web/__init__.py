@@ -13,6 +13,7 @@ for the protocol details.
 from .client import HMMWebClient, HMMWebError, HMMWebResult
 from .firmware import FirmwareModule, UpgradeStatus, UpgradeTarget
 from .inventory import ComponentVersion, InventoryModule
+from .manifest import FieldDiff, ManifestDiff, ManifestError, diff, parse_manifest
 
 __all__ = (
     "HMMWebClient",
@@ -23,4 +24,9 @@ __all__ = (
     "FirmwareModule",
     "UpgradeStatus",
     "UpgradeTarget",
+    "FieldDiff",
+    "ManifestDiff",
+    "ManifestError",
+    "diff",
+    "parse_manifest",
 )

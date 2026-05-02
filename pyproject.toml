@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=10.0",
     "python-dotenv>=1.0",
     "python-multipart>=0.0.20",
+    "pyyaml>=6.0",
     "rich>=13.7",
     "structlog>=24.0",
     "typer>=0.12",

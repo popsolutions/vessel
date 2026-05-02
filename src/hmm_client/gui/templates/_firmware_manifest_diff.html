@@ -1,0 +1,46 @@
+{% if error %}
+  <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded">
+    manifest error: {{ error }}
+  </div>
+{% elif diff is none %}
+  <div class="text-xs text-slate-500">No manifest uploaded yet.</div>
+{% else %}
+  {% set need = diff.needs_action %}
+  <div class="text-xs mb-2 flex items-center gap-3">
+    <span class="text-slate-300">{{ filename }}:</span>
+    {% if diff.all_ok %}
+      <span class="pill pill-ok">all targets satisfied</span>
+    {% elif need %}
+      <span class="pill pill-err">{{ need|length }} of {{ diff.fields|length }} field(s) need action</span>
+    {% else %}
+      <span class="pill pill-na">no fields declared</span>
+    {% endif %}
+  </div>
+  <table class="w-full text-xs border-collapse">
+    <thead>
+      <tr class="text-slate-400 border-b border-slate-800">
+        <th class="text-left py-1 pr-3">Component</th>
+        <th class="text-left py-1 pr-3">Field</th>
+        <th class="text-left py-1 pr-3">Current</th>
+        <th class="text-left py-1 pr-3">Target</th>
+        <th class="text-left py-1">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in diff.fields %}
+      <tr class="border-b border-slate-900/60">
+        <td class="py-1 pr-3 text-slate-200">{{ f.component }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ f.field }}</td>
+        <td class="py-1 pr-3 text-slate-300">{{ f.current or "—" }}</td>
+        <td class="py-1 pr-3 text-amber-300">{{ f.target }}</td>
+        <td class="py-1">
+          {% if f.status == "ok" %}<span class="pill pill-ok">ok</span>
+          {% elif f.status == "mismatch" %}<span class="pill pill-err">mismatch</span>
+          {% elif f.status == "missing" %}<span class="pill pill-err">missing</span>
+          {% else %}<span class="pill pill-na">{{ f.status }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}

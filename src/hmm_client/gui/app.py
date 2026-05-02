@@ -31,7 +31,10 @@ from ..hmm_web import (
     HMMWebClient,
     HMMWebError,
     InventoryModule,
+    ManifestError,
     UpgradeTarget,
+    diff as _manifest_diff,
+    parse_manifest,
 )
 from ..hmm_web.firmware import bladelist as _bladelist_encode
 from ..snapshot import run_snapshot
@@ -941,6 +944,46 @@ def firmware_web_status(request: Request) -> JSONResponse:
                 for t in st.targets
             ],
         }
+    )
+
+
+@app.post("/api/firmware-web/manifest-diff", response_class=HTMLResponse)
+async def firmware_web_manifest_diff(
+    request: Request,
+    file: UploadFile = None,  # type: ignore[assignment]
+) -> HTMLResponse:
+    """Compare an uploaded manifest YAML against the live inventory.
+
+    Returns an HTMX fragment with one row per (component, field) the
+    manifest declares, marked ok/mismatch/missing/unknown.
+    """
+    if file is None or not file.filename:
+        raise HTTPException(400, "no manifest file provided")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "empty manifest")
+    try:
+        manifest = parse_manifest(raw)
+    except ManifestError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_firmware_manifest_diff.html",
+            {"error": str(exc), "diff": None},
+        )
+    try:
+        with _hmm_web(request) as c:
+            versions = InventoryModule(c).list_versions()
+        d = _manifest_diff(versions, manifest)
+    except (HMMWebError, Exception) as exc:
+        return templates.TemplateResponse(
+            request,
+            "_firmware_manifest_diff.html",
+            {"error": str(exc), "diff": None},
+        )
+    return templates.TemplateResponse(
+        request,
+        "_firmware_manifest_diff.html",
+        {"error": None, "diff": d, "filename": file.filename},
     )
 
 
