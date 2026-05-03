@@ -317,6 +317,10 @@ function recomputeBladelist() {
 async function uploadImage(ev) {
   ev.preventDefault();
   const fd = new FormData(document.getElementById('fw-upload-form'));
+  // Hint the backend which page-Referer to claim — HMM 400s a switch
+  // upload that pretends to come from the SMM page.
+  const bl = document.getElementById('fw-bladelist');
+  fd.set('bladelist', bl ? (bl.value || '') : '');
   setMsg('upload-msg', 'uploading…', true);
   try {
     const r = await fetch('/api/firmware-web/upload', { method: 'POST', body: fd });

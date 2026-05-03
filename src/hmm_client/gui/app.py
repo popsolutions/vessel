@@ -39,6 +39,7 @@ from ..hmm_web import (
     parse_manifest,
 )
 from ..hmm_web.firmware import bladelist as _bladelist_encode
+from ..hmm_web.firmware import referer_for_targets as _firmware_referer
 from ..snapshot import run_snapshot
 
 _log = logging.getLogger(__name__)
@@ -1010,8 +1011,14 @@ async def firmware_web_upload(
     request: Request,
     actor: str = Depends(_gui_auth),
     file: UploadFile = None,  # type: ignore[assignment]
+    bladelist: str = Form(""),
 ) -> JSONResponse:
-    """Upload a firmware image (.hpm) into the HMM upload buffer."""
+    """Upload a firmware image (.hpm) into the HMM upload buffer.
+
+    ``bladelist`` is taken as a hint for the right Referer the HMM
+    expects — switch uploads need ``/system_manage_swi.html``, blade
+    uploads ``/system_manage_blade.html``, default SMM page otherwise.
+    """
     if file is None or not file.filename:
         raise HTTPException(400, "no file provided")
     image_bytes = await file.read()
@@ -1020,10 +1027,11 @@ async def firmware_web_upload(
     s = _settings(request)
     from .. import audit as _audit
 
+    referer_path = _firmware_referer(bladelist)
     try:
         with _hmm_web(request) as c:
-            FirmwareModule(c).upload(file.filename, image_bytes)
-    except HMMWebError as exc:
+            FirmwareModule(c).upload(file.filename, image_bytes, referer_path=referer_path)
+    except Exception as exc:
         _audit.log_op(
             op="firmware-web.upload",
             target_kind="hmm",

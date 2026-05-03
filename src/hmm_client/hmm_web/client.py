@@ -192,7 +192,11 @@ class HMMWebClient:
             data=params,
             headers=self._common_headers(referer_path=referer_path),
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            raise HMMWebError(
+                f"{handler} HTTP {r.status_code}: {(r.text or '')[:300]!r}",
+                retcode=r.status_code,
+            )
         rc, desp, root = _parse_xml(r.text)
         return HMMWebResult(retcode=rc, desp=desp, body=r.text, root=root)
 
@@ -220,6 +224,10 @@ class HMMWebClient:
             files=files,
             headers=headers,
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            raise HMMWebError(
+                f"{handler} multipart HTTP {r.status_code}: {(r.text or '')[:300]!r}",
+                retcode=r.status_code,
+            )
         rc, desp, root = _parse_xml(r.text)
         return HMMWebResult(retcode=rc, desp=desp, body=r.text, root=root)

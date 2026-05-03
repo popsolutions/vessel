@@ -89,13 +89,26 @@ class FirmwareModule:
     def __init__(self, client: HMMWebClient) -> None:
         self._c = client
 
-    def upload(self, filename: str, image_bytes: bytes) -> HMMWebResult:
+    def upload(
+        self,
+        filename: str,
+        image_bytes: bytes,
+        *,
+        referer_path: str | None = None,
+    ) -> HMMWebResult:
+        """Upload a firmware image. ``referer_path`` overrides the default
+        SMM-upgrade page; HMM validates the Referer header against the
+        page the operator is on, so switch uploads must claim
+        ``/system_manage_swi.html``, blade uploads
+        ``/system_manage_blade.html`` etc. — see ``referer_for_targets``
+        below for the helper.
+        """
         if not image_bytes:
             raise HMMWebError("upload: empty image bytes")
         result = self._c.post_multipart(
             UPGRADE_HANDLER,
             files={UPLOAD_FIELD: (filename, image_bytes, "application/octet-stream")},
-            referer_path=DEFAULT_REFERER,
+            referer_path=referer_path or DEFAULT_REFERER,
         )
         if result.retcode not in (0, None):
             result.raise_for_retcode()
@@ -165,3 +178,20 @@ def _parse_status(xml_body: str) -> UpgradeStatus:
             )
         )
     return UpgradeStatus(targets=targets, raw=xml_body)
+
+
+def referer_for_targets(bladelist_token: str) -> str:
+    """Pick the right HMM page Referer based on the bladelist shape.
+
+    The HMM cross-checks the upload's Referer against the page the
+    operator's browser is on, so a switch upload from the SMM page is
+    rejected with HTTP 400 and an empty body. This helper mirrors what
+    the legacy GUI does naturally — its upload buttons live on the
+    page that matches the target kind.
+    """
+    t = bladelist_token or ""
+    if "Swi" in t:
+        return "/system_manage_swi.html?chassisid=0"
+    if "Slot" in t:
+        return "/system_manage_blade.html?chassisid=0"
+    return "/system_manage_smm.html?chassisid=0"
