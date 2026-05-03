@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — System Management ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Chassis identification</span></div>
+    <div class="hmm-card-body">
+      <div id="sm-info" class="hmm-muted hmm-tiny">Loading…</div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Audit log (full)</span>
+      <button class="hmm-btn-ghost"
+              hx-get="/api/system-management/audit" hx-target="#sm-audit" hx-swap="innerHTML">↻ refresh</button>
+    </div>
+    <div class="hmm-card-body">
+      <div id="sm-audit" hx-get="/api/system-management/audit" hx-trigger="load" hx-swap="innerHTML">
+        <div class="hmm-muted hmm-tiny">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Operations</span></div>
+    <div class="hmm-card-body">
+      <ul style="list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <li><a class="hmm-btn" href="/chassis-management" style="display:block;text-align:center;padding:10px;">⬆ Firmware Update (Chassis Management)</a></li>
+        <li><a class="hmm-btn" href="/snapshots" style="display:block;text-align:center;padding:10px;">⛁ Snapshots browser</a></li>
+        <li><a class="hmm-btn" href="/health" style="display:block;text-align:center;padding:10px;">♥ Health (alarms + SEL)</a></li>
+        <li><a class="hmm-btn" href="/" style="display:block;text-align:center;padding:10px;">⛛ Chassis</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Accounts · Security · NTP · SSL</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        These sub-surfaces (account mgmt, password policy, NTP servers, SSL cert upload) sit
+        behind dispatcher verbs the captured session didn't fire. Mapping is straightforward
+        once the legacy GUI is opened on each tab — see <code>scripts/dispatch_sweep.py</code>
+        for how to extend the read-only sweep.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+async function loadInfo() {
+  const out = document.getElementById('sm-info');
+  try {
+    const r = await fetch('/api/chassis-settings/info');
+    const j = await r.json();
+    if (j.error) {
+      out.innerHTML = '<div class="hmm-alert hmm-alert-error">' + j.error + '</div>';
+      return;
+    }
+    const tag = (j.asset_tag_xml || '').match(/<assettag>([^<]*)/);
+    const time = (j.server_time_xml || '').match(/<servertime>([^<]*)/i);
+    out.innerHTML = `
+      <table class="hmm-table" style="width:auto;">
+        <tr><th>Asset tag</th><td class="hmm-mono">${tag ? tag[1] : '—'}</td></tr>
+        <tr><th>Server time</th><td class="hmm-mono">${time ? time[1] : '—'}</td></tr>
+        <tr><th>Host</th><td class="hmm-mono">{{ host }}</td></tr>
+      </table>`;
+  } catch (e) {
+    out.innerHTML = '<div class="hmm-alert hmm-alert-error">' + e.message + '</div>';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadInfo);
+</script>
+
+</body>
+</html>

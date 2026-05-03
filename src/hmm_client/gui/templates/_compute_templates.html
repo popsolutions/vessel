@@ -1,0 +1,26 @@
+{% if error %}
+  <div class="hmm-alert hmm-alert-warn hmm-tiny">{{ error }}</div>
+{% endif %}
+{% if not rows %}
+  <div class="hmm-muted hmm-tiny" style="padding: 12px 0;">
+    No compute profile templates defined yet on the chassis.
+    Templates are created from the legacy GUI under
+    <code>computer_manage.html</code> and then surface here.
+  </div>
+{% else %}
+<table class="hmm-table">
+  <thead>
+    <tr>
+      {% set first = rows[0] %}
+      {% for k in first.keys() %}<th>{{ k }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      {% for v in r.values() %}<td class="hmm-mono">{{ v }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — Chassis Settings ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Basic identification</span></div>
+    <div class="hmm-card-body">
+      <div id="cs-basic" class="hmm-muted hmm-tiny">Loading…</div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Slot aliases</span></div>
+    <div class="hmm-card-body">
+      <div id="cs-aliases" class="hmm-muted hmm-tiny">Loading…</div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">BIOS · Boot order · FC ports · Black box · Restore</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        These tabs are write-heavy on the legacy GUI (chassis-wide BIOS boot order,
+        FC port mode, black-box recording, config recovery). Their dispatcher verbs
+        weren't fired in the captured session, so they remain read-pending — open
+        each tab in the legacy GUI through the proxied browser to populate
+        the sweep, then this section gets typed widgets.
+      </p>
+      <ul class="hmm-tiny" style="margin-top: 8px;">
+        <li><code>cabinet_bios.html</code> — chassis BIOS boot order</li>
+        <li><code>cabinet_blade.html</code> — per-blade override defaults</li>
+        <li><code>cabinet_configrecovery.html</code> — backup/restore the chassis config</li>
+        <li><code>cabinet_fc_port.html</code> — FC port enable/mode</li>
+        <li><code>cabinet_smm.html</code> · <code>cabinet_swi.html</code> — module identity</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<script>
+async function loadSettings() {
+  const basic = document.getElementById('cs-basic');
+  const aliases = document.getElementById('cs-aliases');
+  try {
+    const r = await fetch('/api/chassis-settings/info');
+    const j = await r.json();
+    if (j.error) {
+      basic.innerHTML = '<div class="hmm-alert hmm-alert-error">' + j.error + '</div>';
+      aliases.innerHTML = '';
+      return;
+    }
+    const tag = (j.asset_tag_xml || '').match(/<assettag>([^<]*)/);
+    const time = (j.server_time_xml || '').match(/<servertime>([^<]*)/i);
+    basic.innerHTML = `
+      <table class="hmm-table" style="width:auto;">
+        <tr><th>Host</th><td class="hmm-mono">{{ host }}</td></tr>
+        <tr><th>Asset tag</th><td class="hmm-mono">${tag ? tag[1] : '—'}</td></tr>
+        <tr><th>Server time</th><td class="hmm-mono">${time ? time[1] : '—'}</td></tr>
+      </table>`;
+    const xml = j.slot_aliases_xml || '';
+    const rows = [];
+    for (let i = 1; i <= 16; i++) {
+      const m = xml.match(new RegExp(`<slot${i}>([^<]*)`));
+      rows.push(`<tr><th>Slot ${i}</th><td class="hmm-mono">${m && m[1] ? m[1] : '—'}</td></tr>`);
+    }
+    aliases.innerHTML = '<table class="hmm-table" style="width:auto;">' + rows.join('') + '</table>';
+  } catch (e) {
+    basic.innerHTML = '<div class="hmm-alert hmm-alert-error">' + e.message + '</div>';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+
+</body>
+</html>

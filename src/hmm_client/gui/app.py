@@ -217,72 +217,143 @@ def _stub_page(request: Request, *, active_nav: str, title: str, blurb: str) -> 
     )
 
 
+def _page(request: Request, *, active_nav: str, template: str) -> HTMLResponse:
+    s = _settings(request)
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "active_nav": active_nav,
+            "host": s.hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
 @app.get("/chassis-settings", response_class=HTMLResponse)
 def chassis_settings_page(request: Request) -> HTMLResponse:
-    return _stub_page(
-        request,
-        active_nav="chassis-settings",
-        title="Chassis Settings",
-        blurb=(
-            "Basic, BIOS, Black Box, FC Ports, Reminder, Restore — "
-            "the chassis-wide configuration surface from the HMM original. "
-            "Will land here as the SDK pieces stabilize."
-        ),
-    )
+    return _page(request, active_nav="chassis-settings", template="chassis_settings.html")
 
 
 @app.get("/stateless-computing", response_class=HTMLResponse)
 def stateless_computing_page(request: Request) -> HTMLResponse:
-    return _stub_page(
-        request,
-        active_nav="stateless-computing",
-        title="Stateless Computing",
-        blurb=(
-            "Compute Profiles, MAC Pool, UUID Pool, Node management, "
-            "and easyLink (Switch Profile + NIC/vNIC Profile) sit "
-            "here. Coming once the blades are on current firmware."
-        ),
-    )
+    return _page(request, active_nav="stateless-computing", template="stateless_computing.html")
 
 
 @app.get("/psus-fans", response_class=HTMLResponse)
 def psus_fans_page(request: Request) -> HTMLResponse:
-    return _stub_page(
-        request,
-        active_nav="psus-fans",
-        title="PSUs & Fans",
-        blurb=(
-            "Power Meter, PSU Status, Hibernation, Capping, Records, "
-            "Fan Meter — read-only first, then declarative caps."
-        ),
-    )
+    return _page(request, active_nav="psus-fans", template="psus_fans.html")
 
 
 @app.get("/alarm-monitoring", response_class=HTMLResponse)
 def alarm_monitoring_page(request: Request) -> HTMLResponse:
-    return _stub_page(
-        request,
-        active_nav="alarm-monitoring",
-        title="Alarm Monitoring",
-        blurb=(
-            "Alarm Settings + Simulation. Live active alarms already "
-            "render under <a href=\"/health\">Health</a>; this page "
-            "will host alarm subscriptions and acks."
-        ),
-    )
+    return _page(request, active_nav="alarm-monitoring", template="alarm_monitoring.html")
 
 
 @app.get("/system-management", response_class=HTMLResponse)
 def system_management_page(request: Request) -> HTMLResponse:
-    return _stub_page(
+    return _page(request, active_nav="system-management", template="system_management.html")
+
+
+# ----- API endpoints feeding the new menu pages -----
+
+
+@app.get("/api/chassis-settings/info")
+def chassis_settings_info(request: Request) -> JSONResponse:
+    """Asset tag + slot aliases + chassis ID — small read fan-out."""
+    out: dict[str, Any] = {"asset_tag": None, "slot_aliases": [], "server_time": None, "error": None}
+    try:
+        with _hmm_web(request) as c:
+            tag_r = c.post("userhandler.php", actiontype="getassettag", chassisid="0")
+            alias_r = c.post("userhandler.php", actiontype="getslotalias", chassisid="0")
+            time_r = c.post("queryhandler.php", actiontype="getServerTime", chassisid="0")
+            out["asset_tag_xml"] = tag_r.body
+            out["slot_aliases_xml"] = alias_r.body
+            out["server_time_xml"] = time_r.body
+    except HMMWebError as exc:
+        out["error"] = str(exc)
+    return JSONResponse(out)
+
+
+@app.get("/api/stateless-computing/templates", response_class=HTMLResponse)
+def stateless_computing_templates(request: Request) -> HTMLResponse:
+    """HTMX fragment: policy template list (compute profiles)."""
+    rows: list[dict[str, Any]] = []
+    err: str | None = None
+    try:
+        with _hmm_web(request) as c:
+            r = c.post(
+                "queryhandler.php",
+                actiontype="query_policytemplate_list2",
+                chassisid="0",
+                page="1",
+                perpage="10",
+                referer_path="/computer_manage.html?chassisid=0",
+            )
+            if r.root is not None:
+                # Defensive: every <template>/<row>/<item> child gets a row;
+                # the dispatcher wraps differently across firmware versions.
+                for tpl in r.root.iter():
+                    if tpl.tag in ("template", "row", "item", "policytemplate"):
+                        rows.append(
+                            {tag.tag: (tag.text or "") for tag in tpl}
+                        )
+            if not rows:
+                err = "no compute templates defined yet"
+    except Exception as exc:
+        err = str(exc)
+    return templates.TemplateResponse(
         request,
-        active_nav="system-management",
-        title="System Management",
-        blurb=(
-            "Logs, Account, Security, NTP, SSL, Upgrade. Firmware "
-            "upgrade lives under "
-            "<a href=\"/chassis-management\">Chassis Management</a>."
-        ),
+        "_compute_templates.html",
+        {"rows": rows, "error": err},
+    )
+
+
+@app.get("/api/psus-fans/state", response_class=HTMLResponse)
+def psus_fans_state(request: Request) -> HTMLResponse:
+    """HTMX fragment: PSU + fan health derived from selhandler.alarm."""
+    err: str | None = None
+    psus: list[dict[str, Any]] = []
+    fans: list[dict[str, Any]] = []
+    try:
+        with _hmm_web(request) as c:
+            summary = HealthModule(c).list_alarms()
+        # Bucket alarms by source so we can pin them to PSU/Fan tiles.
+        by_source: dict[str, list[Any]] = {}
+        for a in summary.alarms:
+            by_source.setdefault(a.source, []).append(a)
+        for n in (1, 2, 3, 4, 5):
+            key = f"PS{n}"
+            matched = [a for a in summary.alarms if key in a.sensorname]
+            psus.append({"name": f"PSU{n}", "alarms": matched})
+        for n in (1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13):
+            matched = [a for a in summary.alarms if f"Fan{n}" in a.sensorname]
+            fans.append({"name": f"Fan{n}", "alarms": matched})
+    except HMMWebError as exc:
+        err = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "_psus_fans_state.html",
+        {"psus": psus, "fans": fans, "error": err},
+    )
+
+
+@app.get("/api/system-management/audit", response_class=HTMLResponse)
+def system_management_audit(request: Request, n: int = 50) -> HTMLResponse:
+    """HTMX fragment: full audit tail (not filtered)."""
+    from .. import audit as _audit
+
+    try:
+        records = _audit.read_records()
+    except Exception as exc:
+        return HTMLResponse(
+            f'<div class="hmm-alert hmm-alert-error">audit error: {exc}</div>'
+        )
+    records = records[-max(n, 1):][::-1]
+    return templates.TemplateResponse(
+        request,
+        "_firmware_audit.html",
+        {"records": records},
     )
 
 

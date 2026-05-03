@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — Alarm Monitoring ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Active alarms (live)</span>
+      <div class="hmm-row hmm-tiny">
+        <a class="hmm-btn-ghost" href="/health">full Health view →</a>
+        <button class="hmm-btn-ghost"
+                hx-get="/api/health/alarms" hx-target="#am-active" hx-swap="innerHTML">↻ refresh</button>
+      </div>
+    </div>
+    <div class="hmm-card-body">
+      <div id="am-active" hx-get="/api/health/alarms" hx-trigger="load" hx-swap="innerHTML">
+        <div class="hmm-muted hmm-tiny">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Subscriptions</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        Email/SNMP/syslog alarm subscriptions live behind the legacy
+        <code>alarm_config.html</code> page. Wiring those write-paths waits for the
+        SDK module — until then, configure subscriptions from the original HMM web UI
+        and use this page only for live read-back.
+      </p>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">Simulation</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        The HMM lets operators inject a synthetic alarm to validate downstream
+        plumbing. The handler for that wasn't fired during the captured browser
+        session, so this section is intentionally read-only for now.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,42 @@
+{% if error %}
+  <div class="hmm-alert hmm-alert-error">{{ error }}</div>
+{% else %}
+  <div class="pf-grid">
+
+    <div>
+      <h3 style="margin-bottom: 8px;">Power Supplies</h3>
+      <div class="comp-grid psu-grid">
+        {% for p in psus %}
+          {% set crit = p.alarms | selectattr('level', 'equalto', 3) | list %}
+          {% set maj  = p.alarms | selectattr('level', 'equalto', 2) | list %}
+          {% set cls = 'alarm-critical' if crit else ('alarm-major' if maj else 'alarm-ok') %}
+          <div class="comp-tile {{ cls }}">
+            <div class="name">{{ p.name }}</div>
+            {% if crit %}<div class="badge"><span class="hmm-pill hmm-pill-err">{{ crit|length }} critical</span></div>
+            {% elif maj %}<div class="badge"><span class="hmm-pill hmm-pill-warn">{{ maj|length }} major</span></div>
+            {% else %}<div class="badge"><span class="hmm-pill hmm-pill-ok">healthy</span></div>{% endif %}
+            {% if p.alarms %}<div class="alarm-list" title="{{ p.alarms[0].eventdesp }}">{{ p.alarms[0].eventdesp }}</div>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <h3 style="margin-bottom: 8px;">Fan Modules</h3>
+      <div class="comp-grid fan-grid">
+        {% for f in fans %}
+          {% set crit = f.alarms | selectattr('level', 'equalto', 3) | list %}
+          {% set maj  = f.alarms | selectattr('level', 'equalto', 2) | list %}
+          {% set cls = 'alarm-critical' if crit else ('alarm-major' if maj else 'alarm-ok') %}
+          <div class="comp-tile {{ cls }}">
+            <div class="name">{{ f.name }}</div>
+            {% if crit %}<div class="badge"><span class="hmm-pill hmm-pill-err">{{ crit|length }} crit</span></div>
+            {% elif maj %}<div class="badge"><span class="hmm-pill hmm-pill-warn">{{ maj|length }} major</span></div>
+            {% else %}<div class="badge"><span class="hmm-pill hmm-pill-ok">ok</span></div>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+{% endif %}

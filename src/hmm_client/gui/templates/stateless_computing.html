@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — Stateless Computing ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Compute Profiles (policy templates)</span>
+      <button class="hmm-btn-ghost"
+              hx-get="/api/stateless-computing/templates"
+              hx-target="#sc-templates" hx-swap="innerHTML">↻ refresh</button>
+    </div>
+    <div class="hmm-card-body">
+      <div id="sc-templates"
+           hx-get="/api/stateless-computing/templates"
+           hx-trigger="load" hx-swap="innerHTML">
+        <div class="hmm-muted hmm-tiny">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">MAC Pool</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        The MAC pool dispatcher (<code>computer_manage_mac_manage.html</code>) wasn't fired during the
+        captured browser session — opening that menu in the legacy GUI through the proxied browser
+        will populate this. Until then this page only exposes compute profile templates.
+      </p>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">UUID Pool</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        Same status as MAC Pool — needs an extra capture pass through
+        <code>computer_manage_uuid_manage.html</code>.
+      </p>
+    </div>
+  </section>
+
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">easyLink (Switch &amp; vNIC profiles)</span></div>
+    <div class="hmm-card-body">
+      <p class="hmm-muted hmm-tiny">
+        Per the project plan, vNIC profile work waits on a current firmware baseline across blades.
+        Once <a href="/chassis-management">Chassis Management → Firmware Update</a> finishes the
+        blade rollout, the easyLink endpoints become reliable to map and ship here.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
