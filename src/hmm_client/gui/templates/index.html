@@ -130,6 +130,7 @@
       {% else %}
         <span class="hmm-pill hmm-pill-ok">inventory loaded</span>
       {% endif %}
+      <button class="hmm-btn hmm-tiny" onclick="quickSnapshot(this)">⛁ snapshot now</button>
       <button class="hmm-btn-ghost hmm-tiny" onclick="location.reload()">↻ refresh</button>
     </div>
   </section>
@@ -423,6 +424,26 @@ async function bladeBoot(slot, dev) {
     if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
     htmx.ajax('GET', `/api/blade/${slot}/bootdev`, `#bd-current-${slot} span`);
   } catch (e) { toast('boot ' + dev + ' failed: ' + e.message, 'error', `Slot ${slot}`); }
+}
+
+async function quickSnapshot(btn) {
+  if (!confirm('Take a chassis snapshot now? (takes ~30-60s)')) return;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'snapshotting…';
+  try {
+    const r = await fetch('/api/snapshot', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    const id = j.snapshot_id || j.id || j.task_id || '';
+    const link = id ? `<a href="/snapshots/${id}" target="_blank">${id}</a>` : 'see /snapshots';
+    toast(`snapshot done — ${link}`, 'success', 'Snapshot');
+  } catch (e) {
+    toast('snapshot failed: ' + e.message, 'error', 'Snapshot');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 async function startSol(slot) {
