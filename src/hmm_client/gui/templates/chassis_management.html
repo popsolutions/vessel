@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — Chassis Management ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+  <style>
+    .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+    .tool-tile {
+      display: flex; flex-direction: column; gap: 8px;
+      background: #0f172a; border: 1px solid var(--hmm-card-bd-2);
+      border-radius: 6px; padding: 18px;
+      transition: border-color 120ms, transform 80ms;
+      color: var(--hmm-text); text-decoration: none;
+    }
+    .tool-tile:hover { border-color: var(--hmm-link); text-decoration: none; transform: translateY(-1px); }
+    .tool-tile.disabled { opacity: 0.45; pointer-events: none; }
+    .tool-tile .tool-icon { font-size: 26px; line-height: 1; color: var(--hmm-link); }
+    .tool-tile .tool-title { font-weight: 600; color: var(--hmm-title); font-size: 14px; }
+    .tool-tile .tool-sub { font-size: 11.5px; color: var(--hmm-text-soft); }
+    .tool-tile .tool-tag { font-size: 10.5px; color: var(--hmm-text-mute); margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Chassis Management</span>
+      <span class="hmm-mute hmm-tiny">tools that mutate chassis state — backed by snapshot+audit</span>
+    </div>
+    <div class="hmm-card-body">
+
+      <div class="tool-grid">
+
+        <a class="tool-tile" href="/firmware-web">
+          <div class="tool-icon">⬆</div>
+          <div class="tool-title">Firmware Update</div>
+          <div class="tool-sub">Upload .hpm and flash SMMs / switches / blades. Snapshot-first by default. Per-target progress + audit trail.</div>
+          <div class="tool-tag">smmupgradehandler · audit · snapshot</div>
+        </a>
+
+        <a class="tool-tile" href="/snapshots">
+          <div class="tool-icon">⛁</div>
+          <div class="tool-title">Snapshots</div>
+          <div class="tool-sub">Browse the chassis-state archive. Each apply records a snapshot; click any to read its manifest and file tree.</div>
+          <div class="tool-tag">snapshot.create · file tree</div>
+        </a>
+
+        <a class="tool-tile disabled" href="javascript:void(0)" title="VLAN GUI follows once the SDK lands">
+          <div class="tool-icon">⤭</div>
+          <div class="tool-title">VLAN &amp; Switch Ops</div>
+          <div class="tool-sub">CRUD VLANs across CX310s with snapshot+watchdog. CLI shipped; web UI pending.</div>
+          <div class="tool-tag">coming soon</div>
+        </a>
+
+        <a class="tool-tile disabled" href="javascript:void(0)" title="Bulk operations land after firmware blade rollouts">
+          <div class="tool-icon">⛶</div>
+          <div class="tool-title">Bulk Provisioning</div>
+          <div class="tool-sub">Mount ISO + boot-once across a wave of blades for unattended Proxmox installs.</div>
+          <div class="tool-tag">coming soon</div>
+        </a>
+
+      </div>
+
+    </div>
+  </section>
+</main>
+
+</body>
+</html>

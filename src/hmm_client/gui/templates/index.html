@@ -2,301 +2,382 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>hmm — Huawei E9000 ({{ host }})</title>
+  <title>HMM — Chassis ({{ host }})</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/hmm.css">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
-    body { background: #0b1220; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    /* Rudder palette: success/compliant green, error red, pending amber, neutral grey */
-    :root {
-      --rudder-on:      #13beb7;
-      --rudder-off:     #e73b16;
-      --rudder-pending: #f0ab00;
-      --rudder-na:      #abb6bf;
+    .chassis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.2fr 1.2fr;
+      gap: 12px;
+      align-items: start;
     }
-    .card { background: #111827; border: 1px solid #1f2937; }
-    .card-absent { border-color: #1f2937; opacity: .35; }
-    .blade-card { transition: border-color 200ms, background-color 200ms; }
-    .pwr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-               margin-right: 6px; background: var(--rudder-na); vertical-align: middle; }
-    .pwr-loading { border-color: var(--rudder-pending); }
-    .pwr-loading .pwr-dot { background: var(--rudder-pending); animation: pwr-pulse 1.4s ease-in-out infinite; }
-    .pwr-loading .pwr-label { color: var(--rudder-pending); }
-    .pwr-on  { border-color: var(--rudder-on);  background: rgba(19, 190, 183, 0.08); }
-    .pwr-on  .pwr-dot  { background: var(--rudder-on); }
-    .pwr-on  .pwr-label{ color: var(--rudder-on); }
-    .pwr-off { border-color: var(--rudder-off); background: rgba(231, 59, 22, 0.06); }
-    .pwr-off .pwr-dot  { background: var(--rudder-off); }
-    .pwr-off .pwr-label{ color: var(--rudder-off); }
-    .pwr-unknown { border-color: var(--rudder-na); }
-    .pwr-unknown .pwr-dot  { background: var(--rudder-na); }
-    .pwr-unknown .pwr-label{ color: var(--rudder-na); }
+    @media (max-width: 1100px) { .chassis-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 720px)  { .chassis-grid { grid-template-columns: 1fr; } }
+
+    .blade-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .blade-row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      background: #0f172a;
+      border: 1px solid var(--hmm-card-bd);
+      border-left: 3px solid var(--hmm-card-bd-2);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 120ms, background 120ms, transform 80ms;
+    }
+    .blade-row:hover { background: #131c30; border-color: var(--hmm-card-bd-2); transform: translateX(1px); }
+    .blade-row.selected {
+      background: #14213d;
+      border-color: var(--hmm-link);
+      border-left-color: var(--hmm-link);
+      box-shadow: 0 0 0 1px rgba(94,234,212,.18) inset;
+    }
+    .blade-row.absent {
+      background: transparent; border-style: dashed; cursor: default;
+      opacity: 0.45;
+    }
+    .blade-row.absent:hover { background: transparent; transform: none; }
+    .blade-slot {
+      font-weight: 700; color: var(--hmm-title); text-align: center;
+      font-size: 11px;
+    }
+    .blade-row.selected .blade-slot { color: var(--hmm-link); }
+    .blade-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .blade-name { font-weight: 600; color: var(--hmm-text); font-size: 12px; }
+    .blade-sub  { font-size: 10.5px; color: var(--hmm-text-soft); font-family: var(--hmm-fonts); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .blade-pwr {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; color: var(--hmm-text-mute);
+    }
+    .blade-pwr .pwr-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--hmm-text-mute);
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.2);
+    }
+    .blade-pwr.on  .pwr-dot { background: var(--hmm-success); box-shadow: 0 0 6px rgba(19,190,183,.5); }
+    .blade-pwr.off .pwr-dot { background: var(--hmm-danger); }
+    .blade-pwr.querying .pwr-dot { background: var(--hmm-accent); animation: pwr-pulse 1.4s ease-in-out infinite; }
+    .blade-pwr.on  { color: var(--hmm-success); }
+    .blade-pwr.off { color: var(--hmm-danger); }
+    .blade-pwr.querying { color: var(--hmm-accent); }
     @keyframes pwr-pulse { 50% { opacity: .35; } }
+
+    .detail-pane { padding: 12px; min-height: 360px; }
+    .detail-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; color: var(--hmm-text-mute); font-size: 12px;
+      text-align: center; padding: 30px;
+    }
+    .detail-title { color: var(--hmm-title); font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .detail-section { margin-bottom: 14px; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .pwr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .console-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .console-link {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 14px 8px;
+      background: #0f172a;
+      border: 1px solid var(--hmm-card-bd-2);
+      border-radius: 4px;
+      color: var(--hmm-link);
+      transition: background 120ms, border-color 120ms;
+    }
+    .console-link:hover { background: #131c30; border-color: var(--hmm-link); text-decoration: none; }
+    .console-link .icon { font-size: 22px; line-height: 1; }
+    .console-link .label { font-size: 11px; color: var(--hmm-text); }
+    .console-link .sub { font-size: 10px; color: var(--hmm-text-mute); }
+
+    .switch-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+    .health-strip {
+      display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+      padding: 8px 14px;
+    }
   </style>
 </head>
-<body class="text-sm">
+<body>
 
-<header class="border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-  <div class="flex items-center gap-4">
-    <span class="text-emerald-400 font-bold">hmm</span>
-    <span class="text-slate-400">Huawei E9000 @</span>
-    <form id="host-form" class="flex items-center gap-2"
-          onsubmit="setHost(event)">
-      <input id="host-input" type="text" name="host" value="{{ host }}"
-             class="bg-slate-800 px-2 py-1 rounded w-44 text-sm" required
-             placeholder="HMM IP or hostname">
-      <button type="submit"
-              class="bg-emerald-700 hover:bg-emerald-600 px-2 py-1 rounded text-xs">
-        use
-      </button>
-      <button type="button" onclick="resetHost()"
-              class="text-xs text-slate-400 hover:text-emerald-400"
-              title="reset to .env default ({{ default_host }})">
-        reset
-      </button>
-    </form>
-    <span id="host-msg" class="text-xs text-slate-500"></span>
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+
+  <section class="hmm-card">
+    <div class="health-strip">
+      <span class="hmm-mono"><b>{{ host }}</b></span>
+      <span class="hmm-mute hmm-tiny">·</span>
+      <span class="hmm-tiny hmm-muted">{{ blades|length }} blade(s) populated · {{ switches|length }} switch(es)</span>
+      <span class="hmm-spacer"></span>
+      {% if inventory_error %}
+        <span class="hmm-pill hmm-pill-err">inventory error</span>
+      {% else %}
+        <span class="hmm-pill hmm-pill-ok">inventory loaded</span>
+      {% endif %}
+      <button class="hmm-btn-ghost hmm-tiny" onclick="location.reload()">↻ refresh</button>
+    </div>
+  </section>
+
+  {% if inventory_error %}
+  <div class="hmm-alert hmm-alert-error">
+    Could not reach chassis: {{ inventory_error }}
   </div>
-  <div class="flex items-center gap-4 text-xs">
-    <a href="/health" class="text-slate-300 hover:text-emerald-400">health →</a>
-    <a href="/snapshots" class="text-slate-300 hover:text-emerald-400">snapshots →</a>
-    <a href="/firmware-web" class="text-slate-300 hover:text-emerald-400">firmware →</a>
-    <span class="text-slate-500">{{ now }}</span>
+  {% endif %}
+
+  <div class="chassis-grid">
+
+    <!-- Column 1: slots 1-8 -->
+    <section class="hmm-card">
+      <div class="hmm-card-head">
+        <span class="hmm-card-title">Front · Slots 1-8</span>
+        <span class="hmm-mute hmm-tiny">left half</span>
+      </div>
+      <div class="hmm-card-body">
+        <div class="blade-list">
+          {% for n in range(1, 9) %}
+            {% set found = blades | selectattr('slot', 'equalto', n) | list %}
+            {% if found %}
+              {% set b = found[0] %}
+              <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
+                <div class="blade-slot">B{{ n }}</div>
+                <div class="blade-meta">
+                  <div class="blade-name">{{ b.model }}</div>
+                  <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
+                </div>
+                <div class="blade-pwr querying" data-pwr="{{ n }}">
+                  <span class="pwr-dot"></span><span class="pwr-text">…</span>
+                </div>
+              </div>
+            {% else %}
+              <div class="blade-row absent">
+                <div class="blade-slot">B{{ n }}</div>
+                <div class="blade-meta"><div class="blade-name hmm-mute">empty slot</div></div>
+                <div></div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <!-- Column 2: slots 9-16 -->
+    <section class="hmm-card">
+      <div class="hmm-card-head">
+        <span class="hmm-card-title">Front · Slots 9-16</span>
+        <span class="hmm-mute hmm-tiny">right half</span>
+      </div>
+      <div class="hmm-card-body">
+        <div class="blade-list">
+          {% for n in range(9, 17) %}
+            {% set found = blades | selectattr('slot', 'equalto', n) | list %}
+            {% if found %}
+              {% set b = found[0] %}
+              <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
+                <div class="blade-slot">B{{ n }}</div>
+                <div class="blade-meta">
+                  <div class="blade-name">{{ b.model }}</div>
+                  <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
+                </div>
+                <div class="blade-pwr querying" data-pwr="{{ n }}">
+                  <span class="pwr-dot"></span><span class="pwr-text">…</span>
+                </div>
+              </div>
+            {% else %}
+              <div class="blade-row absent">
+                <div class="blade-slot">B{{ n }}</div>
+                <div class="blade-meta"><div class="blade-name hmm-mute">empty slot</div></div>
+                <div></div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <!-- Column 3: Power + Boot for selected blade -->
+    <section class="hmm-card">
+      <div class="hmm-card-head">
+        <span class="hmm-card-title">Power &amp; Boot</span>
+        <span id="pb-target" class="hmm-mute hmm-tiny">no blade selected</span>
+      </div>
+      <div class="hmm-card-body detail-pane" id="pb-pane">
+        <div class="detail-empty">click a blade on the left to drive its power and boot</div>
+      </div>
+    </section>
+
+    <!-- Column 4: Console (SOL / KVM) -->
+    <section class="hmm-card">
+      <div class="hmm-card-head">
+        <span class="hmm-card-title">Console</span>
+        <span id="cn-target" class="hmm-mute hmm-tiny">no blade selected</span>
+      </div>
+      <div class="hmm-card-body detail-pane" id="cn-pane">
+        <div class="detail-empty">SOL log + KVM canvas appear here once a blade is selected</div>
+      </div>
+    </section>
+
   </div>
-</header>
 
-<main class="px-6 py-4 space-y-6">
-
-  <section>
-    <h2 class="text-slate-300 font-bold mb-2 flex items-center justify-between">
-      <span>Chassis</span>
-      <button class="text-xs text-slate-400 hover:text-emerald-400"
-              hx-get="/api/inventory" hx-target="#grid" hx-swap="innerHTML">
-        ↻ refresh
-      </button>
-    </h2>
-    {% if inventory_error %}
-    <div class="bg-rose-900/30 border border-rose-700 text-rose-200 text-xs p-3 rounded mb-2">
-      {{ inventory_error }}
+  <section class="hmm-card">
+    <div class="hmm-card-head">
+      <span class="hmm-card-title">Switch Modules · Rear</span>
     </div>
-    {% endif %}
-    <div id="grid">
-      {% include "_grid.html" %}
-    </div>
-  </section>
-
-  <section class="grid md:grid-cols-2 gap-6">
-    <div class="card rounded p-4">
-      <h3 class="font-bold mb-3 text-emerald-400">Power / Boot</h3>
-      <form id="action-form" class="space-y-2">
-        <div class="flex gap-2 items-center">
-          <label class="w-24 text-slate-400">Slot:</label>
-          <input type="number" name="slot" min="1" max="32" value="1"
-                 class="bg-slate-800 px-2 py-1 rounded w-20" required>
-        </div>
-      </form>
-      <div class="mt-3 grid grid-cols-3 gap-2">
-        <button class="bg-emerald-700 hover:bg-emerald-600 px-2 py-1 rounded"
-                onclick="powerAct('on')">Power On</button>
-        <button class="bg-rose-700 hover:bg-rose-600 px-2 py-1 rounded"
-                onclick="powerAct('off')">Power Off</button>
-        <button class="bg-amber-700 hover:bg-amber-600 px-2 py-1 rounded"
-                onclick="powerAct('cycle')">Power Cycle</button>
+    <div class="hmm-card-body">
+      <div class="switch-bar">
+        {% for n in range(1, 5) %}
+          {% set found = switches | selectattr('slot', 'equalto', n) | list %}
+          {% if found %}
+            {% set s = found[0] %}
+            <div class="blade-row">
+              <div class="blade-slot">Sw{{ n }}</div>
+              <div class="blade-meta">
+                <div class="blade-name">{{ s.model }}</div>
+                <div class="blade-sub">{{ s.mgmt_ip or '—' }}</div>
+              </div>
+              <div class="blade-pwr on"><span class="pwr-dot"></span><span class="pwr-text">linked</span></div>
+            </div>
+          {% else %}
+            <div class="blade-row absent">
+              <div class="blade-slot">Sw{{ n }}</div>
+              <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
+              <div></div>
+            </div>
+          {% endif %}
+        {% endfor %}
       </div>
-      <div class="mt-2 grid grid-cols-3 gap-2">
-        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
-                onclick="bootDev('hdd')">Boot HDD</button>
-        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
-                onclick="bootDev('cd')">Boot CD</button>
-        <button class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs"
-                onclick="bootDev('pxe')">Boot PXE</button>
-      </div>
-      <pre id="action-out" class="mt-3 text-xs text-slate-400 whitespace-pre-wrap"></pre>
     </div>
-
-    <div class="card rounded p-4">
-      <h3 class="font-bold mb-3 text-emerald-400">Mount ISO (vmedia)</h3>
-      <form hx-post="/api/vmedia/mount" hx-encoding="multipart/form-data"
-            hx-target="#vmedia-out" hx-swap="innerHTML"
-            class="space-y-2">
-        <div class="flex gap-2 items-center">
-          <label class="w-24 text-slate-400">Slot:</label>
-          <input type="number" name="slot" min="1" max="32" value="1"
-                 class="bg-slate-800 px-2 py-1 rounded w-20" required>
-        </div>
-        <div class="flex gap-2 items-center">
-          <label class="w-24 text-slate-400">ISO path:</label>
-          <input type="text" name="iso_path" placeholder="/path/to/file.iso"
-                 class="bg-slate-800 px-2 py-1 rounded flex-1" required>
-        </div>
-        <label class="flex gap-2 items-center text-xs text-slate-400">
-          <input type="checkbox" name="hard_reset" value="true">
-          auto hard-reset iBMC if CN_EXIST persists (~30s)
-        </label>
-        <button type="submit"
-                class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded">
-          Mount
-        </button>
-      </form>
-      <pre id="vmedia-out" class="mt-3 text-xs text-slate-400 whitespace-pre-wrap"></pre>
-    </div>
-  </section>
-
-  <section class="card rounded p-4">
-    <h3 class="font-bold mb-3 text-emerald-400">Console (SOL / KVM)</h3>
-    <div class="flex flex-wrap gap-3 items-center">
-      <label class="text-slate-400">Slot:</label>
-      <input id="console-slot" type="number" min="1" max="32" value="1"
-             class="bg-slate-800 px-2 py-1 rounded w-20">
-      <button class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1 rounded"
-              onclick="solCapture()">
-        Capture SOL
-      </button>
-      <button class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded"
-              onclick="kvmOpen()" title="opens the canvas; live handshake is K3.5 — current page replays a captured POST screen">
-        Open KVM
-      </button>
-      <span class="text-xs text-slate-500">
-        SOL ≈ 60-180s (BMC packages /tmp/sol.dat then we dump it).
-      </span>
-    </div>
-    <div id="sol-out" class="mt-3">
-      <p class="text-xs text-slate-500">
-        pick a slot and click <em>Capture SOL</em>.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2 class="text-slate-300 font-bold mb-2 flex items-center justify-between">
-      <span>Background tasks</span>
-      <span class="text-xs text-slate-500">auto-refresh 3s</span>
-    </h2>
-    <div id="tasks" hx-get="/api/tasks" hx-trigger="load, every 3s" hx-swap="innerHTML">
-      {% include "_tasks.html" %}
-    </div>
-  </section>
-
-  <section>
-    <h2 class="text-slate-300 font-bold mb-2">Snapshot</h2>
-    <button class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded"
-            hx-post="/api/snapshot" hx-swap="none">
-      Backup HMM + switches now
-    </button>
-    <p class="text-xs text-slate-500 mt-2">
-      Output goes to <code>./snapshots/&lt;UTC-stamp&gt;/</code>. Watch the Background-tasks panel.
-    </p>
   </section>
 
 </main>
 
 <script>
-  function getSlot() {
-    return document.querySelector('#action-form input[name="slot"]').value;
-  }
-  function showOut(msg) {
-    document.getElementById('action-out').textContent = msg;
-  }
-  async function powerAct(act) {
-    const slot = getSlot();
-    if (!confirm(`power ${act} on slot ${slot}?`)) return;
-    showOut(`running power ${act}…`);
-    const r = await fetch(`/api/blade/${slot}/power/${act}`, { method: 'POST' });
+let selectedSlot = null;
+
+function loadPower(slot) {
+  fetch(`/api/blade/${slot}/powerstate`).then(r => r.json()).then(j => {
+    const el = document.querySelector(`[data-pwr="${slot}"]`);
+    if (!el) return;
+    el.classList.remove('querying','on','off','unknown');
+    const state = (j.state || 'unknown').toLowerCase();
+    el.classList.add(state === 'on' ? 'on' : state === 'off' ? 'off' : 'unknown');
+    el.querySelector('.pwr-text').textContent = state;
+    if (selectedSlot === slot) renderPwr(slot, state);
+  }).catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-pwr]').forEach(el => loadPower(parseInt(el.dataset.pwr, 10)));
+});
+
+function selectBlade(slot) {
+  selectedSlot = slot;
+  document.querySelectorAll('.blade-row.selected').forEach(r => r.classList.remove('selected'));
+  const row = document.querySelector(`.blade-row[data-slot="${slot}"]`);
+  if (row) row.classList.add('selected');
+  document.getElementById('pb-target').textContent = `Slot ${slot}`;
+  document.getElementById('cn-target').textContent = `Slot ${slot}`;
+  const pwrEl = document.querySelector(`[data-pwr="${slot}"]`);
+  const state = pwrEl ? [...pwrEl.classList].find(c => ['on','off','unknown','querying'].includes(c)) : 'unknown';
+  renderPwr(slot, state);
+  renderConsole(slot);
+}
+
+function renderPwr(slot, state) {
+  const pane = document.getElementById('pb-pane');
+  const stateBadge = state === 'on' ? '<span class="hmm-pill hmm-pill-ok">power on</span>'
+                  : state === 'off' ? '<span class="hmm-pill hmm-pill-err">power off</span>'
+                  : '<span class="hmm-pill hmm-pill-mute">' + state + '</span>';
+  pane.innerHTML = `
+    <div class="detail-section">
+      <div class="detail-title">Power</div>
+      <div class="hmm-row hmm-mb-2 hmm-tiny">${stateBadge}
+        <button class="hmm-btn-ghost hmm-tiny" onclick="loadPower(${slot})">↻ recheck</button>
+      </div>
+      <div class="pwr-grid">
+        <button class="hmm-btn-primary hmm-btn" onclick="bladePower(${slot}, 'on')">Power ON</button>
+        <button class="hmm-btn-danger hmm-btn"  onclick="bladePower(${slot}, 'off')">Power OFF</button>
+        <button class="hmm-btn"  onclick="bladePower(${slot}, 'reset')">Reset</button>
+        <button class="hmm-btn"  onclick="bladePower(${slot}, 'cycle')">Cycle</button>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-title">Boot device (one-shot)</div>
+      <div class="hmm-row hmm-mb-2 hmm-tiny" id="bd-current-${slot}">
+        current: <span class="hmm-mute" hx-get="/api/blade/${slot}/bootdev" hx-trigger="load" hx-swap="innerHTML"><code>…</code></span>
+      </div>
+      <div class="hmm-row" style="flex-wrap:wrap;">
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'pxe')">PXE</button>
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'cd')">CD/DVD</button>
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'hdd')">HDD</button>
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'usb')">USB</button>
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'bios')">BIOS Setup</button>
+        <button class="hmm-btn" onclick="bladeBoot(${slot}, 'none')">Clear</button>
+      </div>
+    </div>
+  `;
+  htmx.process(pane);
+}
+
+function renderConsole(slot) {
+  const pane = document.getElementById('cn-pane');
+  pane.innerHTML = `
+    <div class="detail-section">
+      <div class="detail-title">Remote console</div>
+      <div class="console-grid">
+        <a class="console-link" href="/kvm/${slot}" target="_blank">
+          <span class="icon">▶</span>
+          <span class="label">KVM</span>
+          <span class="sub">visual canvas</span>
+        </a>
+        <a class="console-link" href="javascript:void(0)" onclick="startSol(${slot})">
+          <span class="icon">▤</span>
+          <span class="label">SOL</span>
+          <span class="sub">serial-over-LAN</span>
+        </a>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-title">SOL latest output</div>
+      <div id="sol-out-${slot}" hx-get="/api/blade/${slot}/sol/latest" hx-trigger="load" hx-swap="innerHTML">
+        <div class="hmm-mute hmm-tiny">no SOL session yet</div>
+      </div>
+    </div>
+  `;
+  htmx.process(pane);
+}
+
+async function bladePower(slot, action) {
+  if (action === 'off' && !confirm(`Power OFF Slot ${slot}?`)) return;
+  if (action === 'reset' && !confirm(`Hard reset Slot ${slot}?`)) return;
+  if (action === 'cycle' && !confirm(`Power-cycle Slot ${slot}?`)) return;
+  try {
+    const r = await fetch(`/api/blade/${slot}/power/${action}`, { method: 'POST' });
     const j = await r.json();
-    showOut(JSON.stringify(j, null, 2));
-    htmx.ajax('GET', '/api/inventory', '#grid');
-  }
-  async function bootDev(dev) {
-    const slot = getSlot();
-    if (!confirm(`set boot=${dev} on slot ${slot}?`)) return;
-    showOut(`setting boot ${dev}…`);
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    setTimeout(() => loadPower(slot), 600);
+  } catch (e) { alert('power ' + action + ' failed: ' + e.message); }
+}
+
+async function bladeBoot(slot, dev) {
+  try {
     const r = await fetch(`/api/blade/${slot}/boot/${dev}`, { method: 'POST' });
     const j = await r.json();
-    showOut(JSON.stringify(j, null, 2));
-  }
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    htmx.ajax('GET', `/api/blade/${slot}/bootdev`, `#bd-current-${slot} span`);
+  } catch (e) { alert('boot ' + dev + ' failed: ' + e.message); }
+}
 
-  function consoleSlot() {
-    return document.getElementById('console-slot').value;
-  }
-  let solPollTimer = null;
-  async function solRefresh(slot) {
-    const r = await fetch(`/api/blade/${slot}/sol/latest`);
-    document.getElementById('sol-out').innerHTML = await r.text();
-    // stop polling once we see "done" or "error" markers in the rendered HTML
-    const html = document.getElementById('sol-out').innerHTML;
-    if (!/capturing\.\.\./.test(html) && solPollTimer) {
-      clearInterval(solPollTimer);
-      solPollTimer = null;
-    }
-  }
-  async function solCapture() {
-    const slot = consoleSlot();
+async function startSol(slot) {
+  try {
     const r = await fetch(`/api/blade/${slot}/sol/start`, { method: 'POST' });
-    if (!r.ok) {
-      alert(`SOL start failed: HTTP ${r.status}`);
-      return;
-    }
-    if (solPollTimer) clearInterval(solPollTimer);
-    solRefresh(slot);
-    solPollTimer = setInterval(() => solRefresh(slot), 5000);
-  }
-  async function kvmOpen() {
-    const slot = consoleSlot();
-    const r = await fetch(`/api/blade/${slot}/kvm/start`, { method: 'POST' });
-    if (!r.ok) {
-      alert(`KVM start failed: HTTP ${r.status}`);
-      return;
-    }
-    const j = await r.json();
-    if (j.url) window.open(j.url, `kvm-slot-${slot}`);
-  }
-
-  async function setHost(ev) {
-    ev.preventDefault();
-    const fd = new FormData(document.getElementById('host-form'));
-    const r = await fetch('/api/host', { method: 'POST', body: fd });
-    const j = await r.json();
-    document.getElementById('host-msg').textContent = `using ${j.host} — reloading…`;
-    location.reload();
-  }
-  async function resetHost() {
-    const fd = new FormData(); fd.set('host', '');
-    await fetch('/api/host', { method: 'POST', body: fd });
-    location.reload();
-  }
-
-  // --- power-state polling ------------------------------------------------
-  // Each blade card exposes data-slot. After the grid renders we fan out
-  // /api/blade/{slot}/powerstate fetches; results land in card colours
-  // (Rudder palette) as they arrive. SEL probes are slow (~10-15s/slot)
-  // so cards stay amber/pulsing until their answer comes in.
-  async function pollPowerState(card) {
-    const slot = card.dataset.slot;
-    try {
-      const r = await fetch(`/api/blade/${slot}/powerstate`);
-      const j = await r.json();
-      card.classList.remove('pwr-loading');
-      card.classList.remove('pwr-on', 'pwr-off', 'pwr-unknown');
-      card.classList.add('pwr-' + j.state);
-      const lbl = card.querySelector('.pwr-label');
-      if (lbl) lbl.textContent = j.state.toUpperCase();
-    } catch (e) {
-      card.classList.remove('pwr-loading');
-      card.classList.add('pwr-unknown');
-      const lbl = card.querySelector('.pwr-label');
-      if (lbl) lbl.textContent = 'ERR';
-    }
-  }
-  function refreshPowerStates(root = document) {
-    root.querySelectorAll('.blade-card[data-slot]').forEach(pollPowerState);
-  }
-  // Initial poll after grid renders
-  document.addEventListener('DOMContentLoaded', () => refreshPowerStates());
-  // After any HTMX swap that touches #grid (e.g. ↻ refresh), poll again
-  document.body.addEventListener('htmx:afterSwap', (ev) => {
-    if (ev.target && ev.target.id === 'grid') refreshPowerStates(ev.target);
-  });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    setTimeout(() => htmx.ajax('GET', `/api/blade/${slot}/sol/latest`, `#sol-out-${slot}`), 800);
+  } catch (e) { alert('SOL start failed: ' + e.message); }
+}
 </script>
 
 </body>

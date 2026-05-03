@@ -8,18 +8,7 @@
 </head>
 <body>
 
-<header class="hmm-header">
-  <div class="hmm-row">
-    <a href="/" class="hmm-brand">HMM</a>
-    <span class="hmm-host">Snapshot · <b class="hmm-mono">{{ snapshot_id }}</b></span>
-  </div>
-  <nav class="hmm-nav">
-    <a href="/snapshots">← all snapshots</a>
-    <a href="/firmware-web">Firmware</a>
-    <a href="/health">Health</a>
-    <span class="hmm-mute">{{ now }}</span>
-  </nav>
-</header>
+{% include "_nav.html" %}
 
 <main class="hmm-main">
 

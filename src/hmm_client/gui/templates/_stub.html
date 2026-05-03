@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HMM — {{ page_title }} ({{ host }})</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/static/hmm.css">
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="hmm-main">
+  <section class="hmm-card">
+    <div class="hmm-card-head"><span class="hmm-card-title">{{ page_title }}</span></div>
+    <div class="hmm-card-body">
+      <div style="padding: 28px 18px; text-align: center;">
+        <div style="font-size: 32px; color: var(--hmm-text-mute); margin-bottom: 12px;">⏳</div>
+        <h2 style="margin-bottom: 10px;">{{ page_title }}</h2>
+        <p class="hmm-muted" style="max-width: 560px; margin: 0 auto;">{{ blurb | safe }}</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+</body>
+</html>

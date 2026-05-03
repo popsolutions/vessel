@@ -9,19 +9,7 @@
 </head>
 <body>
 
-<header class="hmm-header">
-  <div class="hmm-row">
-    <a href="/" class="hmm-brand">HMM</a>
-    <span class="hmm-host">Huawei E9000 · {{ host }}</span>
-  </div>
-  <nav class="hmm-nav">
-    <a href="/">Chassis</a>
-    <a href="/firmware-web">Firmware</a>
-    <a href="/health" class="active">Health</a>
-    <a href="/snapshots">Snapshots</a>
-    <span class="hmm-mute">{{ now }}</span>
-  </nav>
-</header>
+{% include "_nav.html" %}
 
 <main class="hmm-main">
 

@@ -1,0 +1,19 @@
+<header class="hmm-header">
+  <div class="hmm-row">
+    <a href="/" class="hmm-brand">HMM</a>
+    <span class="hmm-host">Huawei E9000 · {{ host }}</span>
+  </div>
+  <nav class="hmm-nav">
+    <a href="/"                      {% if active_nav == 'chassis' %}class="active"{% endif %}>Chassis</a>
+    <a href="/chassis-settings"      {% if active_nav == 'chassis-settings' %}class="active"{% endif %}>Chassis Settings</a>
+    <a href="/chassis-management"    {% if active_nav == 'chassis-management' %}class="active"{% endif %}>Chassis Management</a>
+    <a href="/stateless-computing"   {% if active_nav == 'stateless-computing' %}class="active"{% endif %}>Stateless Computing</a>
+    <a href="/psus-fans"             {% if active_nav == 'psus-fans' %}class="active"{% endif %}>PSUs &amp; Fans</a>
+    <a href="/alarm-monitoring"      {% if active_nav == 'alarm-monitoring' %}class="active"{% endif %}>Alarm Monitoring</a>
+    <a href="/system-management"     {% if active_nav == 'system-management' %}class="active"{% endif %}>System Management</a>
+    <span style="opacity:0.4;">·</span>
+    <a href="/health"                {% if active_nav == 'health' %}class="active"{% endif %}>Health</a>
+    <a href="/snapshots"             {% if active_nav == 'snapshots' %}class="active"{% endif %}>Snapshots</a>
+    <span class="hmm-mute hmm-tiny">{{ now }}</span>
+  </nav>
+</header>

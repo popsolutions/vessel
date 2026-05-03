@@ -189,6 +189,7 @@ def index(request: Request) -> HTMLResponse:
         request,
         "index.html",
         {
+            "active_nav": "chassis",
             "blades": blades,
             "switches": switches,
             "host": s.hmm_host,
@@ -196,6 +197,105 @@ def index(request: Request) -> HTMLResponse:
             "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "tasks": list(_tasks.values()),
             "inventory_error": err,
+        },
+    )
+
+
+def _stub_page(request: Request, *, active_nav: str, title: str, blurb: str) -> HTMLResponse:
+    """Render a placeholder page for HMM menu items not yet built out."""
+    s = _settings(request)
+    return templates.TemplateResponse(
+        request,
+        "_stub.html",
+        {
+            "active_nav": active_nav,
+            "page_title": title,
+            "blurb": blurb,
+            "host": s.hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+    )
+
+
+@app.get("/chassis-settings", response_class=HTMLResponse)
+def chassis_settings_page(request: Request) -> HTMLResponse:
+    return _stub_page(
+        request,
+        active_nav="chassis-settings",
+        title="Chassis Settings",
+        blurb=(
+            "Basic, BIOS, Black Box, FC Ports, Reminder, Restore — "
+            "the chassis-wide configuration surface from the HMM original. "
+            "Will land here as the SDK pieces stabilize."
+        ),
+    )
+
+
+@app.get("/stateless-computing", response_class=HTMLResponse)
+def stateless_computing_page(request: Request) -> HTMLResponse:
+    return _stub_page(
+        request,
+        active_nav="stateless-computing",
+        title="Stateless Computing",
+        blurb=(
+            "Compute Profiles, MAC Pool, UUID Pool, Node management, "
+            "and easyLink (Switch Profile + NIC/vNIC Profile) sit "
+            "here. Coming once the blades are on current firmware."
+        ),
+    )
+
+
+@app.get("/psus-fans", response_class=HTMLResponse)
+def psus_fans_page(request: Request) -> HTMLResponse:
+    return _stub_page(
+        request,
+        active_nav="psus-fans",
+        title="PSUs & Fans",
+        blurb=(
+            "Power Meter, PSU Status, Hibernation, Capping, Records, "
+            "Fan Meter — read-only first, then declarative caps."
+        ),
+    )
+
+
+@app.get("/alarm-monitoring", response_class=HTMLResponse)
+def alarm_monitoring_page(request: Request) -> HTMLResponse:
+    return _stub_page(
+        request,
+        active_nav="alarm-monitoring",
+        title="Alarm Monitoring",
+        blurb=(
+            "Alarm Settings + Simulation. Live active alarms already "
+            "render under <a href=\"/health\">Health</a>; this page "
+            "will host alarm subscriptions and acks."
+        ),
+    )
+
+
+@app.get("/system-management", response_class=HTMLResponse)
+def system_management_page(request: Request) -> HTMLResponse:
+    return _stub_page(
+        request,
+        active_nav="system-management",
+        title="System Management",
+        blurb=(
+            "Logs, Account, Security, NTP, SSL, Upgrade. Firmware "
+            "upgrade lives under "
+            "<a href=\"/chassis-management\">Chassis Management</a>."
+        ),
+    )
+
+
+@app.get("/chassis-management", response_class=HTMLResponse)
+def chassis_management_page(request: Request) -> HTMLResponse:
+    s = _settings(request)
+    return templates.TemplateResponse(
+        request,
+        "chassis_management.html",
+        {
+            "active_nav": "chassis-management",
+            "host": s.hmm_host,
+            "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         },
     )
 
@@ -794,6 +894,7 @@ def firmware_web_page(request: Request) -> HTMLResponse:
         request,
         "firmware_web.html",
         {
+            "active_nav": "chassis-management",
             "host": s.hmm_host,
             "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         },
@@ -1100,6 +1201,7 @@ def health_page(request: Request) -> HTMLResponse:
         request,
         "health.html",
         {
+            "active_nav": "health",
             "host": s.hmm_host,
             "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         },
@@ -1165,6 +1267,7 @@ def snapshots_index(request: Request) -> HTMLResponse:
         request,
         "snapshots.html",
         {
+            "active_nav": "snapshots",
             "host": s.hmm_host,
             "snapshots": items,
             "snapshots_dir": str(s.snapshots_dir),
@@ -1207,6 +1310,7 @@ def snapshot_detail(request: Request, snapshot_id: str) -> HTMLResponse:
         request,
         "snapshot.html",
         {
+            "active_nav": "snapshots",
             "host": s.hmm_host,
             "snapshot_id": snapshot_id,
             "manifest": manifest_text,
