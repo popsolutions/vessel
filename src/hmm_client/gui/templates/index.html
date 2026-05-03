@@ -142,18 +142,18 @@
 
   <div class="chassis-grid">
 
-    <!-- Front view — chassis sprite, click any blade to drive its
-         power/boot/console panels on the right. Layout uses the
-         exact slot positions captured from the original
-         cabinet.css. CH222 storage blades render with the
-         blade8_right sprite (full-width). -->
+    <!-- Chassis view — front + rear sprites side-by-side, exactly
+         like the HMM home page. Click a blade on front to drive
+         power/boot/console; click rear components to navigate. -->
     <section class="hmm-card">
       <div class="hmm-card-head">
-        <span class="hmm-card-title">Front view · click any blade →</span>
-        <span class="hmm-mute hmm-tiny">model · IP · power state appear in the right pane</span>
+        <span class="hmm-card-title">Chassis · 16 slots front · SMMs/switches/PSUs rear</span>
+        <span class="hmm-mute hmm-tiny">click any blade to drive its power, boot &amp; console →</span>
       </div>
       <div class="hmm-card-body" style="display: flex; flex-direction: column; align-items: center;">
-        <div class="hmm-cabinet-front" style="margin: 6px auto 4px;">
+        <div class="hmm-cabinet-stage" style="gap: 24px;">
+          <div class="hmm-cabinet-side">
+        <div class="hmm-cabinet-front">
           {%- macro slot_class(n) -%}
             {% if blades | selectattr('slot', 'equalto', n) | list %}{% else %}disabled{% endif %}
           {%- endmacro -%}
@@ -171,8 +171,27 @@
           <div class="hmm-cabinet-front-14"><a class="hmm-cabinet-blade16 {{ slot_class(10) }}" data-slot="10" onclick="return spriteSelect(10)" title="Slot 10"><span class="shelf-pwr querying" data-pwr="10"></span><span class="shelf-name">Slot10</span></a></div>
           <div class="hmm-cabinet-front-15"><a class="hmm-cabinet-blade16 {{ slot_class(1) }}" data-slot="1" onclick="return spriteSelect(1)" title="Slot 1"><span class="shelf-pwr querying" data-pwr="1"></span><span class="shelf-name">Slot1</span></a></div>
           <div class="hmm-cabinet-front-16"><a class="hmm-cabinet-blade16 {{ slot_class(9) }}" data-slot="9" onclick="return spriteSelect(9)" title="Slot 9"><span class="shelf-pwr querying" data-pwr="9"></span><span class="shelf-name">Slot9</span></a></div>
+            </div>
+            <span class="hmm-cabinet-caption">Front · 13 populated</span>
+          </div>
+
+          <div class="hmm-cabinet-side">
+            <div class="hmm-cabinet-back">
+              <div class="hmm-cabinet-back-pem-1"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU3"></a></div>
+              <div class="hmm-cabinet-back-pem-2"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU2"></a></div>
+              <div class="hmm-cabinet-back-pem-3"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU1"></a></div>
+              <div class="hmm-cabinet-back-pem-5"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU5"></a></div>
+              <div class="hmm-cabinet-back-pem-6"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU4"></a></div>
+              <div class="hmm-cabinet-back-smm-1"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM1 (active)"></a></div>
+              <div class="hmm-cabinet-back-smm-2"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM2 (standby)"></a></div>
+              <div class="hmm-cabinet-back-swi-1"><a class="hmm-cabinet-swi2 disabled" title="Swi1 — empty"></a></div>
+              <div class="hmm-cabinet-back-swi-2"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi2 (CX310)"></a></div>
+              <div class="hmm-cabinet-back-swi-3"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi3 (CX310)"></a></div>
+              <div class="hmm-cabinet-back-swi-4"><a class="hmm-cabinet-swi2 disabled" title="Swi4 — empty"></a></div>
+            </div>
+            <span class="hmm-cabinet-caption">Rear · click → drill in</span>
+          </div>
         </div>
-        <span class="hmm-cabinet-caption">Front view · 13 populated slots</span>
 
         <!-- Detail row for the currently selected blade. -->
         <div id="selected-blade-card" style="width: 100%; margin-top: 14px; padding: 10px; background: #0f172a; border: 1px solid var(--hmm-card-bd); border-radius: 4px; min-height: 56px;">
@@ -205,61 +224,32 @@
 
   </div>
 
-  <!-- Rear view — chassis_back.png with PSU/Fan/SMM/Switch sprites
-       positioned per the original cabinet.css. Each component is a
-       link to its detail page (Switches → /chassis-management for
-       firmware; PSUs/Fans → /psus-fans for health). -->
+  <!-- Switch summary as a thin strip below the chassis (rear sprite
+       already visible alongside front above). -->
   <section class="hmm-card">
-    <div class="hmm-card-head">
-      <span class="hmm-card-title">Rear view · SMMs · Switches · PSUs · Fans</span>
-      <span class="hmm-mute hmm-tiny">click any tile to drill into it</span>
-    </div>
+    <div class="hmm-card-head"><span class="hmm-card-title">Switch Modules</span></div>
     <div class="hmm-card-body">
-      <div class="hmm-cabinet-stage" style="justify-content: flex-start;">
-        <div class="hmm-cabinet-side">
-          <div class="hmm-cabinet-back">
-            <!-- PSUs -->
-            <div class="hmm-cabinet-back-pem-1"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU3"></a></div>
-            <div class="hmm-cabinet-back-pem-2"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU2"></a></div>
-            <div class="hmm-cabinet-back-pem-3"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU1"></a></div>
-            <div class="hmm-cabinet-back-pem-5"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU5"></a></div>
-            <div class="hmm-cabinet-back-pem-6"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU4"></a></div>
-            <!-- SMMs -->
-            <div class="hmm-cabinet-back-smm-1"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM1 (active SMM)"></a></div>
-            <div class="hmm-cabinet-back-smm-2"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM2 (standby SMM)"></a></div>
-            <!-- Switches: Swi1/Swi4 absent on this chassis -->
-            <div class="hmm-cabinet-back-swi-1"><a class="hmm-cabinet-swi2 disabled" title="Swi1 (empty)"></a></div>
-            <div class="hmm-cabinet-back-swi-2"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi2 (CX310)"></a></div>
-            <div class="hmm-cabinet-back-swi-3"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi3 (CX310)"></a></div>
-            <div class="hmm-cabinet-back-swi-4"><a class="hmm-cabinet-swi2 disabled" title="Swi4 (empty)"></a></div>
-          </div>
-          <span class="hmm-cabinet-caption">Chassis rear · click → drill in</span>
-        </div>
-
-        <!-- Switch summary text alongside the sprite -->
-        <div style="display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 240px;">
-          <div class="hmm-mute hmm-tiny">Switch Modules</div>
-          {% for n in range(1, 5) %}
-            {% set found = switches | selectattr('slot', 'equalto', n) | list %}
-            {% if found %}
-              {% set s = found[0] %}
-              <div class="blade-row">
-                <div class="blade-slot">Sw{{ n }}</div>
-                <div class="blade-meta">
-                  <div class="blade-name">{{ s.model }}</div>
-                  <div class="blade-sub">{{ s.mgmt_ip or '—' }}</div>
-                </div>
-                <div class="blade-pwr on"><span class="pwr-dot"></span><span class="pwr-text">linked</span></div>
+      <div class="switch-bar">
+        {% for n in range(1, 5) %}
+          {% set found = switches | selectattr('slot', 'equalto', n) | list %}
+          {% if found %}
+            {% set s = found[0] %}
+            <div class="blade-row">
+              <div class="blade-slot">Sw{{ n }}</div>
+              <div class="blade-meta">
+                <div class="blade-name">{{ s.model }}</div>
+                <div class="blade-sub">{{ s.mgmt_ip or '—' }}</div>
               </div>
-            {% else %}
-              <div class="blade-row absent">
-                <div class="blade-slot">Sw{{ n }}</div>
-                <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
-                <div></div>
-              </div>
-            {% endif %}
-          {% endfor %}
-        </div>
+              <div class="blade-pwr on"><span class="pwr-dot"></span><span class="pwr-text">linked</span></div>
+            </div>
+          {% else %}
+            <div class="blade-row absent">
+              <div class="blade-slot">Sw{{ n }}</div>
+              <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
+              <div></div>
+            </div>
+          {% endif %}
+        {% endfor %}
       </div>
     </div>
   </section>
