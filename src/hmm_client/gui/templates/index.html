@@ -359,12 +359,16 @@ function renderPwr(slot, state) {
         <button class="hmm-btn"  onclick="bladePower(${slot}, 'cycle')">Cycle</button>
       </div>
     </div>
+
     <div class="detail-section">
       <div class="detail-title">Boot device (one-shot)</div>
-      <div class="hmm-row hmm-mb-2 hmm-tiny" id="bd-current-${slot}">
-        current: <span class="hmm-mute" hx-get="/api/blade/${slot}/bootdev" hx-trigger="load" hx-swap="innerHTML"><code>…</code></span>
+      <div class="hmm-row hmm-mb-2 hmm-tiny">
+        current:
+        <span id="bd-current-${slot}" class="hmm-mono"
+              style="background:#0a121e;border:1px solid var(--hmm-card-bd);padding:2px 6px;border-radius:3px;color:var(--hmm-link);"
+              hx-get="/api/blade/${slot}/bootdev" hx-trigger="load" hx-swap="innerHTML">…</span>
       </div>
-      <div class="hmm-row" style="flex-wrap:wrap;">
+      <div class="hmm-row" style="flex-wrap:wrap; gap:4px;">
         <button class="hmm-btn" onclick="bladeBoot(${slot}, 'pxe')">PXE</button>
         <button class="hmm-btn" onclick="bladeBoot(${slot}, 'cd')">CD/DVD</button>
         <button class="hmm-btn" onclick="bladeBoot(${slot}, 'hdd')">HDD</button>
@@ -373,20 +377,89 @@ function renderPwr(slot, state) {
         <button class="hmm-btn" onclick="bladeBoot(${slot}, 'none')">Clear</button>
       </div>
     </div>
+
+    <div class="detail-section">
+      <div class="detail-title">Virtual Media · ISO mount</div>
+      <div class="hmm-row hmm-mb-2 hmm-tiny">
+        <input type="text" id="vm-iso-${slot}" class="hmm-input" style="flex:1; min-width:0;"
+               placeholder="path/to/proxmox.iso"
+               value="${(window._lastIso || '')}">
+        <button class="hmm-btn-ghost hmm-tiny" onclick="browseIso(${slot})">browse…</button>
+      </div>
+      <div class="hmm-row hmm-tiny">
+        <label class="hmm-row-tight">
+          <input type="checkbox" id="vm-hard-${slot}"> hard-reset after mount
+        </label>
+        <span class="hmm-spacer"></span>
+        <button class="hmm-btn" onclick="vmediaMount(${slot})">mount</button>
+        <button class="hmm-btn" onclick="vmediaRelease(${slot}, false)">unmount</button>
+      </div>
+    </div>
   `;
   htmx.process(pane);
+}
+
+async function browseIso(slot) {
+  // Tiny inline browser — fetch /api/iso/list, prompt with file list.
+  try {
+    const r = await fetch('/api/iso/list');
+    const j = await r.json();
+    const files = (j.files || []).map(f => f.path);
+    if (!files.length) {
+      toast('no .iso/.img files in ' + j.cwd + ' (set $HMM_ISO_DIR or pass ?dir=...)', 'warn', 'Browse');
+      return;
+    }
+    const choice = prompt('Pick an ISO path (or paste):\n\n' + files.join('\n'), files[0]);
+    if (choice) {
+      document.getElementById('vm-iso-' + slot).value = choice;
+      window._lastIso = choice;
+    }
+  } catch (e) { toast('browse failed: ' + e.message, 'error'); }
+}
+
+async function vmediaMount(slot) {
+  const iso = document.getElementById('vm-iso-' + slot).value.trim();
+  if (!iso) { toast('pick an ISO path first', 'warn', `Slot ${slot}`); return; }
+  const hard = document.getElementById('vm-hard-' + slot).checked ? 'true' : 'false';
+  if (!confirm(`Mount ${iso} on Slot ${slot}` + (hard === 'true' ? ' and hard-reset?' : '?'))) return;
+  try {
+    const fd = new FormData();
+    fd.set('slot', String(slot));
+    fd.set('iso_path', iso);
+    fd.set('hard_reset', hard);
+    const r = await fetch('/api/vmedia/mount', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    toast(`mounted ${iso}`, 'success', `Slot ${slot}`);
+    window._lastIso = iso;
+  } catch (e) { toast('mount failed: ' + e.message, 'error', `Slot ${slot}`); }
+}
+
+async function vmediaRelease(slot, hard) {
+  if (!confirm(`Release vmedia on Slot ${slot}` + (hard ? ' (hard)?' : '?'))) return;
+  try {
+    const r = await fetch(`/api/vmedia/${slot}/release?hard=${hard}`, { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+    toast('vmedia released', 'success', `Slot ${slot}`);
+  } catch (e) { toast('release failed: ' + e.message, 'error', `Slot ${slot}`); }
 }
 
 function renderConsole(slot) {
   const pane = document.getElementById('cn-pane');
   pane.innerHTML = `
-    <div class="detail-section">
+    <div class="detail-section" id="cn-launchers">
       <div class="detail-title">Remote console</div>
       <div class="console-grid">
-        <a class="console-link" href="/kvm/${slot}" target="_blank">
+        <a class="console-link" href="javascript:void(0)" onclick="embedKvm(${slot})">
           <span class="icon">▶</span>
-          <span class="label">KVM</span>
-          <span class="sub">visual canvas</span>
+          <span class="label">KVM (embed)</span>
+          <span class="sub">in-page canvas</span>
+        </a>
+        <a class="console-link" href="/kvm/${slot}" target="_blank">
+          <span class="icon">⛶</span>
+          <span class="label">KVM (new tab)</span>
+          <span class="sub">full-screen</span>
         </a>
         <a class="console-link" href="javascript:void(0)" onclick="startSol(${slot})">
           <span class="icon">▤</span>
@@ -397,12 +470,26 @@ function renderConsole(slot) {
     </div>
     <div class="detail-section">
       <div class="detail-title">SOL latest output</div>
-      <div id="sol-out-${slot}" hx-get="/api/blade/${slot}/sol/latest" hx-trigger="load" hx-swap="innerHTML">
+      <div id="sol-out-${slot}" hx-get="/api/blade/${slot}/sol/latest" hx-trigger="load" hx-swap="innerHTML"
+           style="background:#0a121e;border:1px solid var(--hmm-card-bd);border-radius:3px;padding:8px;font-family:var(--hmm-fonts);font-size:11px;max-height:280px;overflow:auto;">
         <div class="hmm-mute hmm-tiny">no SOL session yet</div>
       </div>
     </div>
   `;
   htmx.process(pane);
+}
+
+function embedKvm(slot) {
+  const pane = document.getElementById('cn-pane');
+  pane.innerHTML = `
+    <div class="hmm-row hmm-mb-2 hmm-tiny">
+      <b style="color:var(--hmm-link);">KVM Slot ${slot}</b>
+      <span class="hmm-spacer"></span>
+      <a class="hmm-btn-ghost hmm-tiny" href="/kvm/${slot}" target="_blank">⛶ pop out</a>
+      <button class="hmm-btn-ghost hmm-tiny" onclick="renderConsole(${slot})">close</button>
+    </div>
+    <iframe src="/kvm/${slot}" style="width:100%; height: 460px; border: 1px solid var(--hmm-card-bd); border-radius: 4px; background: #000;"></iframe>
+  `;
 }
 
 async function bladePower(slot, action) {
