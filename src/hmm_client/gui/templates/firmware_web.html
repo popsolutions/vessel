@@ -233,18 +233,26 @@ function onFileChosen(input) {
   const text = document.getElementById('fw-drop-text');
   const icon = document.getElementById('fw-drop-icon');
   const drop = document.getElementById('fw-drop');
-  const btn  = document.getElementById('fw-upload-btn');
   if (!f) {
     text.innerHTML = 'Drop a <code>.hpm</code> file here, or click to browse';
     icon.textContent = '⬆';
     drop.classList.remove('armed');
-    btn.disabled = true;
-    return;
+  } else {
+    text.innerHTML = `<b>${f.name}</b> <span class="hmm-mute">(${fmtBytes(f.size)})</span>`;
+    icon.textContent = '✓';
+    drop.classList.add('armed');
   }
-  text.innerHTML = `<b>${f.name}</b> <span class="hmm-mute">(${fmtBytes(f.size)})</span>`;
-  icon.textContent = '✓';
-  drop.classList.add('armed');
-  btn.disabled = false;
+  refreshUploadGate();
+}
+
+function refreshUploadGate() {
+  const hasFile = (document.getElementById('fw-file').files.length > 0);
+  const tok = (document.getElementById('fw-bladelist').value || '').trim();
+  const btn  = document.getElementById('fw-upload-btn');
+  btn.disabled = !(hasFile && tok);
+  btn.title = !tok
+    ? 'Pick a target in the chassis picker below first (HMM checks the upload Referer)'
+    : (!hasFile ? 'Choose a .hpm file' : `upload ${tok}`);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -312,6 +320,7 @@ function recomputeBladelist() {
   document.getElementById('bladelist-display').textContent = list || '(none selected)';
   document.getElementById('fw-bladelist').value = list;
   document.getElementById('fw-apply-btn').disabled = !list;
+  refreshUploadGate();
 }
 
 async function uploadImage(ev) {
