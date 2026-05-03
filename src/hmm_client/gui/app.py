@@ -1311,6 +1311,19 @@ def health_alarms(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/api/health/alarms-summary")
+def health_alarms_summary(request: Request) -> JSONResponse:
+    """JSON summary of active alarms — used by the top-nav badge."""
+    try:
+        with _hmm_web(request) as c:
+            s = HealthModule(c).list_alarms()
+        return JSONResponse(
+            {"total": s.total, "critical": s.critical, "major": s.major, "minor": s.minor}
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+
 @app.get("/api/health/sel", response_class=HTMLResponse)
 def health_sel(request: Request, bladename: str = "smm", perpage: int = 50) -> HTMLResponse:
     err: str | None = None

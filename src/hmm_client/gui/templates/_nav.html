@@ -2,6 +2,7 @@
   <div class="hmm-row">
     <a href="/" class="hmm-brand">HMM</a>
     <span class="hmm-host">Huawei E9000 · {{ host }}</span>
+    <span id="nav-alarm-badge" class="hmm-mute hmm-tiny" style="margin-left: 8px;"></span>
   </div>
   <nav class="hmm-nav">
     <a href="/"                      {% if active_nav == 'chassis' %}class="active"{% endif %}>Chassis</a>
@@ -17,3 +18,25 @@
     <span class="hmm-mute hmm-tiny">{{ now }}</span>
   </nav>
 </header>
+
+<script>
+(async function navAlarmBadge() {
+  const el = document.getElementById('nav-alarm-badge');
+  if (!el) return;
+  const paint = async () => {
+    try {
+      const r = await fetch('/api/health/alarms-summary');
+      if (!r.ok) return;
+      const j = await r.json();
+      const parts = [];
+      if (j.critical) parts.push(`<a href="/health" class="hmm-pill hmm-pill-err" title="critical">${j.critical} crit</a>`);
+      if (j.major)    parts.push(`<a href="/health" class="hmm-pill hmm-pill-warn" title="major">${j.major} maj</a>`);
+      if (j.minor)    parts.push(`<a href="/health" class="hmm-pill hmm-pill-mute" title="minor">${j.minor} min</a>`);
+      if (!parts.length) parts.push('<span class="hmm-pill hmm-pill-ok">no active alarms</span>');
+      el.innerHTML = parts.join(' ');
+    } catch (_) { /* keep silent */ }
+  };
+  paint();
+  setInterval(paint, 30000);
+})();
+</script>
