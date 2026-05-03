@@ -243,32 +243,61 @@
 
   </div>
 
+  <!-- Rear view — chassis_back.png with PSU/Fan/SMM/Switch sprites
+       positioned per the original cabinet.css. Each component is a
+       link to its detail page (Switches → /chassis-management for
+       firmware; PSUs/Fans → /psus-fans for health). -->
   <section class="hmm-card">
     <div class="hmm-card-head">
-      <span class="hmm-card-title">Switch Modules · Rear</span>
+      <span class="hmm-card-title">Rear view · SMMs · Switches · PSUs · Fans</span>
+      <span class="hmm-mute hmm-tiny">click any tile to drill into it</span>
     </div>
     <div class="hmm-card-body">
-      <div class="switch-bar">
-        {% for n in range(1, 5) %}
-          {% set found = switches | selectattr('slot', 'equalto', n) | list %}
-          {% if found %}
-            {% set s = found[0] %}
-            <div class="blade-row">
-              <div class="blade-slot">Sw{{ n }}</div>
-              <div class="blade-meta">
-                <div class="blade-name">{{ s.model }}</div>
-                <div class="blade-sub">{{ s.mgmt_ip or '—' }}</div>
+      <div class="hmm-cabinet-stage" style="justify-content: flex-start;">
+        <div class="hmm-cabinet-side">
+          <div class="hmm-cabinet-back">
+            <!-- PSUs -->
+            <div class="hmm-cabinet-back-pem-1"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU3"></a></div>
+            <div class="hmm-cabinet-back-pem-2"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU2"></a></div>
+            <div class="hmm-cabinet-back-pem-3"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU1"></a></div>
+            <div class="hmm-cabinet-back-pem-5"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU5"></a></div>
+            <div class="hmm-cabinet-back-pem-6"><a class="hmm-cabinet-pem" href="/psus-fans" title="PSU4"></a></div>
+            <!-- SMMs -->
+            <div class="hmm-cabinet-back-smm-1"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM1 (active SMM)"></a></div>
+            <div class="hmm-cabinet-back-smm-2"><a class="hmm-cabinet-smm" href="/chassis-management" title="MM2 (standby SMM)"></a></div>
+            <!-- Switches: Swi1/Swi4 absent on this chassis -->
+            <div class="hmm-cabinet-back-swi-1"><a class="hmm-cabinet-swi2 disabled" title="Swi1 (empty)"></a></div>
+            <div class="hmm-cabinet-back-swi-2"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi2 (CX310)"></a></div>
+            <div class="hmm-cabinet-back-swi-3"><a class="hmm-cabinet-swi2" href="/chassis-management" title="Swi3 (CX310)"></a></div>
+            <div class="hmm-cabinet-back-swi-4"><a class="hmm-cabinet-swi2 disabled" title="Swi4 (empty)"></a></div>
+          </div>
+          <span class="hmm-cabinet-caption">Chassis rear · click → drill in</span>
+        </div>
+
+        <!-- Switch summary text alongside the sprite -->
+        <div style="display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 240px;">
+          <div class="hmm-mute hmm-tiny">Switch Modules</div>
+          {% for n in range(1, 5) %}
+            {% set found = switches | selectattr('slot', 'equalto', n) | list %}
+            {% if found %}
+              {% set s = found[0] %}
+              <div class="blade-row">
+                <div class="blade-slot">Sw{{ n }}</div>
+                <div class="blade-meta">
+                  <div class="blade-name">{{ s.model }}</div>
+                  <div class="blade-sub">{{ s.mgmt_ip or '—' }}</div>
+                </div>
+                <div class="blade-pwr on"><span class="pwr-dot"></span><span class="pwr-text">linked</span></div>
               </div>
-              <div class="blade-pwr on"><span class="pwr-dot"></span><span class="pwr-text">linked</span></div>
-            </div>
-          {% else %}
-            <div class="blade-row absent">
-              <div class="blade-slot">Sw{{ n }}</div>
-              <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
-              <div></div>
-            </div>
-          {% endif %}
-        {% endfor %}
+            {% else %}
+              <div class="blade-row absent">
+                <div class="blade-slot">Sw{{ n }}</div>
+                <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
+                <div></div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
       </div>
     </div>
   </section>

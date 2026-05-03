@@ -106,6 +106,12 @@ _powerstate_cache: dict[tuple[str, int], tuple[float, str]] = {}
 _powerstate_ttl_seconds = 30.0
 _powerstate_lock = threading.Lock()
 
+# Chassis inventory TTL cache (Redfish round-trip is ~13s per fetch).
+# Keyed by (hmm_host); refresh button can be wired later to force-flush.
+_inventory_cache: dict[str, tuple[float, list[dict[str, Any]], list[dict[str, Any]]]] = {}
+_inventory_ttl_seconds = 60.0
+_inventory_lock = threading.Lock()
+
 
 _HOST_COOKIE = "hmm_host"
 
@@ -177,14 +183,24 @@ def readyz() -> JSONResponse:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
+    import time as _t
+
     s = _settings(request)
     blades: list[dict[str, Any]] = []
     switches: list[dict[str, Any]] = []
     err: str | None = None
-    try:
-        blades, switches = ops.list_inventory(s)
-    except Exception as e:  # connection refused, TLS error, wrong host, etc.
-        err = f"could not reach chassis at {s.hmm_host}: {e!s}"
+    now = _t.monotonic()
+    with _inventory_lock:
+        cached = _inventory_cache.get(s.hmm_host)
+    if cached and (now - cached[0]) < _inventory_ttl_seconds:
+        blades, switches = cached[1], cached[2]
+    else:
+        try:
+            blades, switches = ops.list_inventory(s)
+            with _inventory_lock:
+                _inventory_cache[s.hmm_host] = (now, blades, switches)
+        except Exception as e:  # connection refused, TLS error, wrong host, etc.
+            err = f"could not reach chassis at {s.hmm_host}: {e!s}"
     return templates.TemplateResponse(
         request,
         "index.html",
