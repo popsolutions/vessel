@@ -142,79 +142,41 @@
 
   <div class="chassis-grid">
 
-    <!-- Front view — physical chassis layout. 8 rows x 2 cols.
-         Bottom-up ordering: Slot 1 / Slot 9 at the bottom; Slot 8 /
-         Slot 16 at the top. CH222 storage blades (slots 13/14/15)
-         span both columns because they are full-width FRUs. -->
+    <!-- Front view — chassis sprite, click any blade to drive its
+         power/boot/console panels on the right. Layout uses the
+         exact slot positions captured from the original
+         cabinet.css. CH222 storage blades render with the
+         blade8_right sprite (full-width). -->
     <section class="hmm-card">
       <div class="hmm-card-head">
-        <span class="hmm-card-title">Front view · 16 slots</span>
-        <span class="hmm-mute hmm-tiny">click any blade to drive its power, boot &amp; console →</span>
+        <span class="hmm-card-title">Front view · click any blade →</span>
+        <span class="hmm-mute hmm-tiny">model · IP · power state appear in the right pane</span>
       </div>
-      <div class="hmm-card-body">
-        <div class="front-grid">
-          {#- Row layout follows the original cabinet.css: each row is
-              either (left,right) CH121 pair or a single full-width
-              CH222. Top-to-bottom order. -#}
-          {% set rows = [
-            (8, 16),
-            (15, none),
-            (14, none),
-            (13, none),
-            (4, 12),
-            (3, 11),
-            (2, 10),
-            (1, 9),
-          ] %}
-          {% for left, right in rows %}
-            {% if right is none %}
-              {#- Full-width CH222 row. -#}
-              {% set found = blades | selectattr('slot', 'equalto', left) | list %}
-              {% if found %}
-                {% set b = found[0] %}
-                <div class="blade-row wide span2" data-slot="{{ left }}" onclick="selectBlade({{ left }})">
-                  <div class="blade-slot">B{{ left }}</div>
-                  <div class="blade-meta">
-                    <div class="blade-name">{{ b.model }} <span class="hmm-mute hmm-tiny">· CH222 storage (full-width)</span></div>
-                    <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
-                  </div>
-                  <div class="blade-pwr querying" data-pwr="{{ left }}">
-                    <span class="pwr-dot"></span><span class="pwr-text">…</span>
-                  </div>
-                </div>
-              {% else %}
-                <div class="blade-row absent span2">
-                  <div class="blade-slot">B{{ left }}</div>
-                  <div class="blade-meta"><div class="blade-name hmm-mute">empty (full-width slot)</div></div>
-                  <div></div>
-                </div>
-              {% endif %}
-            {% else %}
-              {#- Pair of half-width CH121 cells. -#}
-              {% for n in (left, right) %}
-                {% set found = blades | selectattr('slot', 'equalto', n) | list %}
-                {% if found %}
-                  {% set b = found[0] %}
-                  <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
-                    <div class="blade-slot">B{{ n }}</div>
-                    <div class="blade-meta">
-                      <div class="blade-name">{{ b.model }}</div>
-                      <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
-                    </div>
-                    <div class="blade-pwr querying" data-pwr="{{ n }}">
-                      <span class="pwr-dot"></span><span class="pwr-text">…</span>
-                    </div>
-                  </div>
-                {% else %}
-                  <div class="blade-row absent">
-                    <div class="blade-slot">B{{ n }}</div>
-                    <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
-                    <div></div>
-                  </div>
-                {% endif %}
-              {% endfor %}
-            {% endif %}
-          {% endfor %}
+      <div class="hmm-card-body" style="display: flex; flex-direction: column; align-items: center;">
+        <div class="hmm-cabinet-front" style="margin: 6px auto 4px;">
+          {%- macro slot_class(n) -%}
+            {% if blades | selectattr('slot', 'equalto', n) | list %}{% else %}disabled{% endif %}
+          {%- endmacro -%}
+
+          <div class="hmm-cabinet-front-1"><a class="hmm-cabinet-blade16 {{ slot_class(8) }}" data-slot="8" onclick="return spriteSelect(8)" title="Slot 8"><span class="shelf-pwr querying" data-pwr="8"></span><span class="shelf-name">Slot8</span></a></div>
+          <div class="hmm-cabinet-front-2"><a class="hmm-cabinet-blade16 {{ slot_class(16) }}" data-slot="16" onclick="return spriteSelect(16)" title="Slot 16"><span class="shelf-pwr querying" data-pwr="16"></span><span class="shelf-name">Slot16</span></a></div>
+          <div class="hmm-cabinet-front-3"><a class="hmm-cabinet-blade8_right {{ slot_class(15) }}" data-slot="15" onclick="return spriteSelect(15)" title="Slot 15 (CH222)"><span class="shelf-pwr querying" data-pwr="15"></span><span class="shelf-name">Slot15</span></a></div>
+          <div class="hmm-cabinet-front-5"><a class="hmm-cabinet-blade8_right {{ slot_class(14) }}" data-slot="14" onclick="return spriteSelect(14)" title="Slot 14 (CH222)"><span class="shelf-pwr querying" data-pwr="14"></span><span class="shelf-name">Slot14</span></a></div>
+          <div class="hmm-cabinet-front-7"><a class="hmm-cabinet-blade8_right {{ slot_class(13) }}" data-slot="13" onclick="return spriteSelect(13)" title="Slot 13 (CH222)"><span class="shelf-pwr querying" data-pwr="13"></span><span class="shelf-name">Slot13</span></a></div>
+          <div class="hmm-cabinet-front-9" ><a class="hmm-cabinet-blade16 {{ slot_class(4) }}" data-slot="4" onclick="return spriteSelect(4)" title="Slot 4"><span class="shelf-pwr querying" data-pwr="4"></span><span class="shelf-name">Slot4</span></a></div>
+          <div class="hmm-cabinet-front-10"><a class="hmm-cabinet-blade16 {{ slot_class(12) }}" data-slot="12" onclick="return spriteSelect(12)" title="Slot 12"><span class="shelf-pwr querying" data-pwr="12"></span><span class="shelf-name">Slot12</span></a></div>
+          <div class="hmm-cabinet-front-11"><a class="hmm-cabinet-blade16 {{ slot_class(3) }}" data-slot="3" onclick="return spriteSelect(3)" title="Slot 3"><span class="shelf-pwr querying" data-pwr="3"></span><span class="shelf-name">Slot3</span></a></div>
+          <div class="hmm-cabinet-front-12"><a class="hmm-cabinet-blade16 {{ slot_class(11) }}" data-slot="11" onclick="return spriteSelect(11)" title="Slot 11"><span class="shelf-pwr querying" data-pwr="11"></span><span class="shelf-name">Slot11</span></a></div>
+          <div class="hmm-cabinet-front-13"><a class="hmm-cabinet-blade16 {{ slot_class(2) }}" data-slot="2" onclick="return spriteSelect(2)" title="Slot 2"><span class="shelf-pwr querying" data-pwr="2"></span><span class="shelf-name">Slot2</span></a></div>
+          <div class="hmm-cabinet-front-14"><a class="hmm-cabinet-blade16 {{ slot_class(10) }}" data-slot="10" onclick="return spriteSelect(10)" title="Slot 10"><span class="shelf-pwr querying" data-pwr="10"></span><span class="shelf-name">Slot10</span></a></div>
+          <div class="hmm-cabinet-front-15"><a class="hmm-cabinet-blade16 {{ slot_class(1) }}" data-slot="1" onclick="return spriteSelect(1)" title="Slot 1"><span class="shelf-pwr querying" data-pwr="1"></span><span class="shelf-name">Slot1</span></a></div>
+          <div class="hmm-cabinet-front-16"><a class="hmm-cabinet-blade16 {{ slot_class(9) }}" data-slot="9" onclick="return spriteSelect(9)" title="Slot 9"><span class="shelf-pwr querying" data-pwr="9"></span><span class="shelf-name">Slot9</span></a></div>
+        </div>
+        <span class="hmm-cabinet-caption">Front view · 13 populated slots</span>
+
+        <!-- Detail row for the currently selected blade. -->
+        <div id="selected-blade-card" style="width: 100%; margin-top: 14px; padding: 10px; background: #0f172a; border: 1px solid var(--hmm-card-bd); border-radius: 4px; min-height: 56px;">
+          <div class="hmm-mute hmm-tiny">Click a blade above to see its model, IP and live power state.</div>
         </div>
       </div>
     </section>
@@ -307,16 +269,68 @@
 <script>
 let selectedSlot = null;
 
+// Static per-blade data, rendered server-side from the inventory call.
+const BLADES = {
+  {%- for b in blades %}
+  {{ b.slot }}: { model: {{ b.model | tojson }}, ip: {{ b.ibmc_ip | tojson }}, state: {{ b.state | tojson }} }{% if not loop.last %},{% endif %}
+  {%- endfor %}
+};
+
 function loadPower(slot) {
   fetch(`/api/blade/${slot}/powerstate`).then(r => r.json()).then(j => {
-    const el = document.querySelector(`[data-pwr="${slot}"]`);
-    if (!el) return;
-    el.classList.remove('querying','on','off','unknown');
+    const els = document.querySelectorAll(`[data-pwr="${slot}"]`);
+    if (!els.length) return;
     const state = (j.state || 'unknown').toLowerCase();
-    el.classList.add(state === 'on' ? 'on' : state === 'off' ? 'off' : 'unknown');
-    el.querySelector('.pwr-text').textContent = state;
-    if (selectedSlot === slot) renderPwr(slot, state);
+    els.forEach(el => {
+      el.classList.remove('querying','on','off','unknown');
+      el.classList.add(state === 'on' ? 'on' : state === 'off' ? 'off' : 'unknown');
+      const txt = el.querySelector('.pwr-text');
+      if (txt) txt.textContent = state;
+    });
+    if (selectedSlot === slot) {
+      renderPwr(slot, state);
+      paintSelectedCard(slot, state);
+    }
   }).catch(() => {});
+}
+
+// Sprite selection — toggles 'board_sel' on the chosen <a> (so its
+// '_on' sprite paints), clears it from the others, then routes
+// through the existing selectBlade() to fill Power+Boot/Console.
+function spriteSelect(slot) {
+  if (!(slot in BLADES)) {
+    // Empty slot — visual only feedback.
+    const card = document.getElementById('selected-blade-card');
+    card.innerHTML = `<div class="hmm-mute hmm-tiny">Slot ${slot} is empty.</div>`;
+    return false;
+  }
+  document.querySelectorAll('.hmm-cabinet-front a.board_sel').forEach(a => a.classList.remove('board_sel'));
+  const link = document.querySelector(`.hmm-cabinet-front a[data-slot="${slot}"]`);
+  if (link) link.classList.add('board_sel');
+  selectBlade(slot);
+  // power state from the dot, if known
+  const dot = document.querySelector(`.shelf-pwr[data-pwr="${slot}"]`);
+  const state = dot ? [...dot.classList].find(c => ['on','off','unknown','querying'].includes(c)) || 'unknown' : 'unknown';
+  paintSelectedCard(slot, state);
+  return false;
+}
+
+function paintSelectedCard(slot, state) {
+  const card = document.getElementById('selected-blade-card');
+  const b = BLADES[slot];
+  if (!b) return;
+  const stateBadge = state === 'on' ? '<span class="hmm-pill hmm-pill-ok">power on</span>'
+                  : state === 'off' ? '<span class="hmm-pill hmm-pill-err">power off</span>'
+                  : `<span class="hmm-pill hmm-pill-mute">${state}</span>`;
+  card.innerHTML = `
+    <div class="hmm-row" style="gap: 14px;">
+      <span class="hmm-mono" style="color: var(--hmm-link); font-weight: 600;">Slot ${slot}</span>
+      <span><b>${b.model}</b></span>
+      <span class="hmm-mono hmm-mute">${b.ip}</span>
+      <span class="hmm-spacer"></span>
+      ${stateBadge}
+      <button class="hmm-btn-ghost hmm-tiny" onclick="loadPower(${slot})">↻ recheck</button>
+    </div>`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {

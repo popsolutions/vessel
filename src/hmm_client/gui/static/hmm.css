@@ -273,6 +273,34 @@ a.hmm-cabinet-fan1 {
 a.board_sel { filter: brightness(1.25) saturate(1.4); }
 a.disabled  { filter: grayscale(0.7) opacity(0.45); pointer-events: none; }
 
+/* Front-view blade overlays — slot label + per-blade power dot
+ * positioned over the captured blade sprite. Each <a> uses
+ * position:relative so the spans can layer on top. */
+.hmm-cabinet-front a, .hmm-cabinet-back a { position: relative; }
+
+.shelf-name {
+  position: absolute; pointer-events: none;
+  bottom: 0; right: 5px;
+  font-size: 9px; line-height: 13px;
+  color: #ffffff;
+  text-shadow: 0 0 2px rgba(0,0,0,0.7);
+  letter-spacing: 0.3px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.shelf-pwr {
+  position: absolute; pointer-events: none;
+  top: 3px; left: 5px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(148,163,184,0.4);
+  border: 1px solid rgba(0,0,0,0.4);
+}
+.shelf-pwr.on       { background: #13beb7; box-shadow: 0 0 4px rgba(19,190,183,0.7); }
+.shelf-pwr.off      { background: #e73b16; }
+.shelf-pwr.querying { background: #f0ab00; animation: pwr-pulse 1.4s ease-in-out infinite; }
+@keyframes pwr-pulse { 50% { opacity: .35; } }
+
 /* Drop zone */
 .hmm-drop {
   border: 2px dashed var(--hmm-card-bd-2); border-radius: 5px;
