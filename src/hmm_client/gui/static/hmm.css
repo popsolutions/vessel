@@ -337,6 +337,32 @@ pre.hmm-yaml {
 }
 .hmm-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
+/* Toast notifications (global; rendered into #hmm-toasts in _nav.html). */
+.hmm-toasts {
+  position: fixed; right: 18px; bottom: 18px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.hmm-toast {
+  background: var(--hmm-card-bg); color: var(--hmm-text);
+  border: 1px solid var(--hmm-card-bd-2);
+  border-left: 3px solid var(--hmm-link);
+  border-radius: 4px; padding: 9px 14px;
+  min-width: 240px; max-width: 380px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  font-size: 12px;
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+}
+.hmm-toast.success { border-left-color: var(--hmm-success); }
+.hmm-toast.warn    { border-left-color: var(--hmm-warn); }
+.hmm-toast.error   { border-left-color: var(--hmm-danger); }
+.hmm-toast .title  { font-weight: 600; color: var(--hmm-title); margin-bottom: 2px; }
+.hmm-toast .msg    { color: var(--hmm-text-soft); }
+.hmm-toast.fade-out { animation: toast-out 220ms ease-in forwards; }
+@keyframes toast-in  { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes toast-out { to   { transform: translateY(8px); opacity: 0; } }
+
 /* Utility */
 .hmm-row { display: flex; align-items: center; gap: 10px; }
 .hmm-row-tight { display: flex; align-items: center; gap: 6px; }

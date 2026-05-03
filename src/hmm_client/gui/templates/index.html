@@ -413,7 +413,7 @@ async function bladePower(slot, action) {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
     setTimeout(() => loadPower(slot), 600);
-  } catch (e) { alert('power ' + action + ' failed: ' + e.message); }
+  } catch (e) { toast('power ' + action + ' failed: ' + e.message, 'error', `Slot ${slot}`); }
 }
 
 async function bladeBoot(slot, dev) {
@@ -422,7 +422,7 @@ async function bladeBoot(slot, dev) {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
     htmx.ajax('GET', `/api/blade/${slot}/bootdev`, `#bd-current-${slot} span`);
-  } catch (e) { alert('boot ' + dev + ' failed: ' + e.message); }
+  } catch (e) { toast('boot ' + dev + ' failed: ' + e.message, 'error', `Slot ${slot}`); }
 }
 
 async function startSol(slot) {
@@ -430,7 +430,7 @@ async function startSol(slot) {
     const r = await fetch(`/api/blade/${slot}/sol/start`, { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     setTimeout(() => htmx.ajax('GET', `/api/blade/${slot}/sol/latest`, `#sol-out-${slot}`), 800);
-  } catch (e) { alert('SOL start failed: ' + e.message); }
+  } catch (e) { toast('SOL start failed: ' + e.message, 'error', `Slot ${slot}`); }
 }
 </script>
 

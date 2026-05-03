@@ -19,7 +19,20 @@
   </nav>
 </header>
 
+<div id="hmm-toasts" class="hmm-toasts"></div>
+
 <script>
+// Global toast() helper available on every page that includes _nav.html.
+window.toast = function(msg, kind, title) {
+  const root = document.getElementById('hmm-toasts');
+  if (!root) return;
+  const t = document.createElement('div');
+  t.className = 'hmm-toast' + (kind ? ' ' + kind : '');
+  t.innerHTML = (title ? `<div class="title">${title}</div>` : '') + `<div class="msg">${msg}</div>`;
+  root.appendChild(t);
+  setTimeout(() => { t.classList.add('fade-out'); setTimeout(() => t.remove(), 240); }, 4200);
+};
+
 (async function navAlarmBadge() {
   const el = document.getElementById('nav-alarm-badge');
   if (!el) return;
