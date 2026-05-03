@@ -9,7 +9,7 @@
   <style>
     .chassis-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1.2fr 1.2fr;
+      grid-template-columns: 1.6fr 1fr 1fr;
       gap: 12px;
       align-items: start;
     }
@@ -17,6 +17,18 @@
     @media (max-width: 720px)  { .chassis-grid { grid-template-columns: 1fr; } }
 
     .blade-list { display: flex; flex-direction: column; gap: 6px; }
+
+    /* Front-view chassis grid — 8 rows x 2 cols (left=odd-numbered side,
+       right=even-numbered), bottom-up ordering matches the physical
+       chassis. CH222 storage blades are full-width and span both
+       columns; their row eats both cells. */
+    .front-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .front-grid .span2 { grid-column: 1 / -1; }
+    .front-grid .blade-row.wide { background: #0e1e30; }
 
     .blade-row {
       display: grid;
@@ -130,68 +142,77 @@
 
   <div class="chassis-grid">
 
-    <!-- Column 1: slots 1-8 -->
+    <!-- Front view — physical chassis layout. 8 rows x 2 cols.
+         Bottom-up ordering: Slot 1 / Slot 9 at the bottom; Slot 8 /
+         Slot 16 at the top. CH222 storage blades (slots 13/14/15)
+         span both columns because they are full-width FRUs. -->
     <section class="hmm-card">
       <div class="hmm-card-head">
-        <span class="hmm-card-title">Front · Slots 1-8</span>
-        <span class="hmm-mute hmm-tiny">left half</span>
+        <span class="hmm-card-title">Front view · 16 slots</span>
+        <span class="hmm-mute hmm-tiny">click any blade to drive its power, boot &amp; console →</span>
       </div>
       <div class="hmm-card-body">
-        <div class="blade-list">
-          {% for n in range(1, 9) %}
-            {% set found = blades | selectattr('slot', 'equalto', n) | list %}
-            {% if found %}
-              {% set b = found[0] %}
-              <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
-                <div class="blade-slot">B{{ n }}</div>
-                <div class="blade-meta">
-                  <div class="blade-name">{{ b.model }}</div>
-                  <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
+        <div class="front-grid">
+          {#- Row layout follows the original cabinet.css: each row is
+              either (left,right) CH121 pair or a single full-width
+              CH222. Top-to-bottom order. -#}
+          {% set rows = [
+            (8, 16),
+            (15, none),
+            (14, none),
+            (13, none),
+            (4, 12),
+            (3, 11),
+            (2, 10),
+            (1, 9),
+          ] %}
+          {% for left, right in rows %}
+            {% if right is none %}
+              {#- Full-width CH222 row. -#}
+              {% set found = blades | selectattr('slot', 'equalto', left) | list %}
+              {% if found %}
+                {% set b = found[0] %}
+                <div class="blade-row wide span2" data-slot="{{ left }}" onclick="selectBlade({{ left }})">
+                  <div class="blade-slot">B{{ left }}</div>
+                  <div class="blade-meta">
+                    <div class="blade-name">{{ b.model }} <span class="hmm-mute hmm-tiny">· CH222 storage (full-width)</span></div>
+                    <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
+                  </div>
+                  <div class="blade-pwr querying" data-pwr="{{ left }}">
+                    <span class="pwr-dot"></span><span class="pwr-text">…</span>
+                  </div>
                 </div>
-                <div class="blade-pwr querying" data-pwr="{{ n }}">
-                  <span class="pwr-dot"></span><span class="pwr-text">…</span>
+              {% else %}
+                <div class="blade-row absent span2">
+                  <div class="blade-slot">B{{ left }}</div>
+                  <div class="blade-meta"><div class="blade-name hmm-mute">empty (full-width slot)</div></div>
+                  <div></div>
                 </div>
-              </div>
+              {% endif %}
             {% else %}
-              <div class="blade-row absent">
-                <div class="blade-slot">B{{ n }}</div>
-                <div class="blade-meta"><div class="blade-name hmm-mute">empty slot</div></div>
-                <div></div>
-              </div>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
-
-    <!-- Column 2: slots 9-16 -->
-    <section class="hmm-card">
-      <div class="hmm-card-head">
-        <span class="hmm-card-title">Front · Slots 9-16</span>
-        <span class="hmm-mute hmm-tiny">right half</span>
-      </div>
-      <div class="hmm-card-body">
-        <div class="blade-list">
-          {% for n in range(9, 17) %}
-            {% set found = blades | selectattr('slot', 'equalto', n) | list %}
-            {% if found %}
-              {% set b = found[0] %}
-              <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
-                <div class="blade-slot">B{{ n }}</div>
-                <div class="blade-meta">
-                  <div class="blade-name">{{ b.model }}</div>
-                  <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
-                </div>
-                <div class="blade-pwr querying" data-pwr="{{ n }}">
-                  <span class="pwr-dot"></span><span class="pwr-text">…</span>
-                </div>
-              </div>
-            {% else %}
-              <div class="blade-row absent">
-                <div class="blade-slot">B{{ n }}</div>
-                <div class="blade-meta"><div class="blade-name hmm-mute">empty slot</div></div>
-                <div></div>
-              </div>
+              {#- Pair of half-width CH121 cells. -#}
+              {% for n in (left, right) %}
+                {% set found = blades | selectattr('slot', 'equalto', n) | list %}
+                {% if found %}
+                  {% set b = found[0] %}
+                  <div class="blade-row" data-slot="{{ n }}" onclick="selectBlade({{ n }})">
+                    <div class="blade-slot">B{{ n }}</div>
+                    <div class="blade-meta">
+                      <div class="blade-name">{{ b.model }}</div>
+                      <div class="blade-sub">{{ b.ibmc_ip }} · {{ b.state }}</div>
+                    </div>
+                    <div class="blade-pwr querying" data-pwr="{{ n }}">
+                      <span class="pwr-dot"></span><span class="pwr-text">…</span>
+                    </div>
+                  </div>
+                {% else %}
+                  <div class="blade-row absent">
+                    <div class="blade-slot">B{{ n }}</div>
+                    <div class="blade-meta"><div class="blade-name hmm-mute">empty</div></div>
+                    <div></div>
+                  </div>
+                {% endif %}
+              {% endfor %}
             {% endif %}
           {% endfor %}
         </div>
