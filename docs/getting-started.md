@@ -27,13 +27,18 @@
 Create `.env` in the project root:
 
 ```bash
+# CLI defaults + login-form pre-fill (each chassis can still use its own
+# user/password through the GUI login form).
 HMM_HOST=192.168.1.30
 HMM_USER=root
 HMM_PASSWORD=changeme
 
+# GUI target dropdown — one or more chassis hosts, comma-separated.
+# New chassis can also be added live from the /login form.
+VESSEL_TARGETS=192.168.1.30,192.168.1.20
+
 # Optional but recommended
 VESSEL_AUDIT_LOG=/var/log/vessel/audit.log
-VESSEL_GUI_PASSWORD_HASH=$2b$12$...    # see GUI auth
 ```
 
 `.env` is gitignored.
@@ -58,9 +63,11 @@ hmm gui
 # → http://127.0.0.1:8765
 ```
 
-For production deployment, set `VESSEL_GUI_PASSWORD_HASH` first
-(see [GUI auth](operations/gui-auth.md)) — the GUI logs a loud
-warning at startup when auth is disabled.
+First request lands on `/login`. Pick a target from the dropdown
+and authenticate with the HMM credentials for that chassis — see
+[GUI auth](operations/gui-auth.md). To drive several chassis from
+the same install, see
+[Multi-chassis target switcher](operations/multi-chassis.md).
 
 ## Telegram notifications (optional)
 

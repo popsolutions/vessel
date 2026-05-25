@@ -72,7 +72,9 @@ extend, and run anywhere.
 | **Snapshot + drift detection** | ✅ working | backup HMM + switch configs, diff vs live |
 | **Inventory (via Redfish)** | ✅ working | populates the home page on connect |
 | **Server-side ISO browser** | ✅ working | pick `.iso`/`.img` without typing a path |
-| **FastAPI web GUI** | ✅ working | `/`, `/kvm/{slot}` |
+| **FastAPI web GUI** | ✅ working | `/`, `/kvm/{slot}`, `/firmware-web`, … |
+| **Multi-chassis login** | ✅ working | per-session HMM credentials, target dropdown, "+ add new chassis" persisted to `~/.config/vessel/targets.json` |
+| **Firmware upgrade (HMM web)** | ✅ working | `/firmware-web` — upload `.hpm`, snapshot-first, manifest diff |
 | **Python CLI** | ✅ working | `hmm list / power / boot / snapshot / drift / vmedia mount` |
 | Switch (CX310) VLAN ops | 🟡 next | direct VRP CLI access in progress |
 | GUI in applet visual style | 🟡 next | layout tracking the original 32-blade tab strip |
@@ -82,25 +84,43 @@ extend, and run anywhere.
 
 ```bash
 # 1. Clone
-git clone https://git.pop.coop/noc/huaweie9000.git
-cd huaweie9000
+git clone https://github.com/popsolutions/vessel.git
+cd vessel
 
 # 2. Install (Python 3.11+)
 uv venv .venv && . .venv/bin/activate
 uv pip install -e .
 
-# 3. Configure your chassis
+# 3. Configure
 cp .env.example .env
-$EDITOR .env       # set HMM_HOST, HMM_USER, HMM_PASSWORD
+$EDITOR .env       # set VESSEL_TARGETS (one or more chassis IPs)
+                   # HMM_USER/HMM_PASSWORD seed the login form defaults
 
-# 4. Verify CLI works
+# 4. Verify the CLI reaches the chassis
 hmm list
 
 # 5. Open the web UI
 hmm gui            # opens http://127.0.0.1:8765
 ```
 
-That's it. Click any blade, hit `KVM` — full live console in your browser.
+The GUI lands on `/login`. Pick a target from the dropdown (or type
+a new IP with **+ add new chassis…**), enter the HMM credentials,
+and you're in. New chassis added via the form are persisted to
+`~/.config/vessel/targets.json` and appear in the dropdown on every
+later restart.
+
+Click any blade, hit **KVM** — full live console in your browser.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Login form with target dropdown](docs/screenshots/login.png) | ![Chassis home with cabinet sprite](docs/screenshots/chassis-home.png) |
+| **Sign in** — pick a chassis, enter HMM credentials. | **Chassis home** — front/rear sprites, live blade power state. |
+| ![Add a new chassis from the form](docs/screenshots/add-new-chassis.png) | ![Embedded KVM canvas](docs/screenshots/kvm-canvas.png) |
+| **+ add new chassis** — type any IP/hostname; on successful login it's persisted to `~/.config/vessel/targets.json`. | **KVM** — live console in the browser, no Java required. |
+
+More UI captures live in [`docs/screenshots/`](docs/screenshots/).
 
 ## The reverse-engineering story
 
@@ -240,7 +260,15 @@ src/hmm_client/
 
   gui/               FastAPI + HTMX web GUI
     app.py           routes + WebSocket KVM bridge
-    templates/       Jinja2 (index.html, kvm.html, _grid.html)
+    session.py       per-operator HMM sessions + target list (VESSEL_TARGETS)
+    templates/       Jinja2 (index.html, kvm.html, login.html, _nav.html, …)
+
+  hmm_web/           HMM proprietary web-API (XML dispatchers)
+    client.py        login, csrf, post wrapper
+    inventory.py     firmware versions, vendor data
+    firmware.py      .hpm upload + flash dispatch
+    health.py        SEL / alarms
+    easylink.py      vNIC / teaming / vlan profiles
 
 docs/
   kvm-protocol-re.md   the protocol RE notes (ground truth doc)

@@ -38,6 +38,7 @@ nav:
       - Audit log: operations/audit-log.md
       - Health checks: operations/health-checks.md
       - GUI auth: operations/gui-auth.md
+      - Multi-chassis: operations/multi-chassis.md
   - Reference:
       - Roadmap: roadmap.md
       - Discovery notes: discovery.md
